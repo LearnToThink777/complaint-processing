@@ -1,0 +1,421 @@
+[
+  {
+    "chunk_id": "금융소비자보호법#제17조",
+    "source_type": "statute",
+    "text": "제17조(적합성원칙) ① 금융상품판매업자등은 일반금융소비자의 재산상황, 투자경험,\n투자성향 등에 비추어 적합하지 아니하다고 인정되는 금융상품 계약 체결을 권유해서는 아니 된다.\n② 금융상품판매업자등은 계약 체결을 권유하기 전에 소비자의 정보를 파악하고 확인받아야 한다.",
+    "metadata": {
+      "law_name": "금융소비자보호법",
+      "article": "제17조",
+      "sector": "공통"
+    },
+    "labels": {
+      "issue_summary": "제17조(적합성원칙) ① 금융상품판매업자등은 일반금융소비자의 재산상황, ",
+      "keywords": [
+        "적합성원칙",
+        "금융상품판매업자등은",
+        "일반금융소비자의",
+        "재산상황",
+        "투자경험"
+      ],
+      "everyday_questions": [
+        "적합성원칙 관련해서 문제가 있어요",
+        "금융상품판매업자등은 관련해서 문제가 있어요",
+        "일반금융소비자의 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "금융소비자보호법#제19조",
+    "source_type": "statute",
+    "text": "제19조(설명의무) ① 금융상품판매업자등은 일반금융소비자에게 계약 체결을 권유하는 경우\n그 상품의 중요한 사항을 이해할 수 있도록 설명하여야 한다. 원금 손실이 발생할 수 있다는 사실과\n그 위험의 내용은 특히 중요한 사항으로 본다.",
+    "metadata": {
+      "law_name": "금융소비자보호법",
+      "article": "제19조",
+      "sector": "공통"
+    },
+    "labels": {
+      "issue_summary": "제19조(설명의무) ① 금융상품판매업자등은 일반금융소비자에게 계약 체결을",
+      "keywords": [
+        "설명의무",
+        "금융상품판매업자등은",
+        "일반금융소비자에게",
+        "계약",
+        "체결을"
+      ],
+      "everyday_questions": [
+        "설명의무 관련해서 문제가 있어요",
+        "금융상품판매업자등은 관련해서 문제가 있어요",
+        "일반금융소비자에게 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "자본시장법#제49조",
+    "source_type": "statute",
+    "text": "제49조(부당권유의 금지) 금융투자업자는 투자권유를 할 때 다음 각 호의 행위를 하여서는 아니 된다.\n1. 거짓의 내용을 알리는 행위\n2. 불확실한 사항에 대하여 단정적 판단을 제공하거나 확실하다고 오인하게 할 소지가 있는 내용을 알리는 행위\n3. 손실의 전부 또는 일부를 보전하여 줄 것을 사전에 약속하는 행위",
+    "metadata": {
+      "law_name": "자본시장법",
+      "article": "제49조",
+      "sector": "증권"
+    },
+    "labels": {
+      "issue_summary": "제49조(부당권유의 금지) 금융투자업자는 투자권유를 할 때 다음 각 호의",
+      "keywords": [
+        "부당권유의",
+        "금지",
+        "금융투자업자는",
+        "투자권유를",
+        "다음"
+      ],
+      "everyday_questions": [
+        "부당권유의 관련해서 문제가 있어요",
+        "금지 관련해서 문제가 있어요",
+        "금융투자업자는 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2023-0942#사건개요",
+    "source_type": "decision",
+    "text": "【사건개요】 안정추구형으로 분류된 신청인에게 원금 비보장 고위험 ELS를 권유·판매한 건.",
+    "metadata": {
+      "case_no": "2023-0942",
+      "case_display": "분쟁조정 2023-0942 ELS",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 42,
+      "award_ratio": 45,
+      "section": "사건개요"
+    },
+    "labels": {
+      "issue_summary": "【사건개요】 안정추구형으로 분류된 신청인에게 원금 비보장 고위험 ELS를",
+      "keywords": [
+        "사건개요",
+        "안정추구형으로",
+        "분류된",
+        "신청인에게",
+        "원금"
+      ],
+      "everyday_questions": [
+        "사건개요 관련해서 문제가 있어요",
+        "안정추구형으로 관련해서 문제가 있어요",
+        "분류된 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2023-0942#당사자주장",
+    "source_type": "decision",
+    "text": "【당사자주장】 신청인은 원금 손실 위험을 제대로 설명받지 못했고 투자성향과 맞지 않았다고 주장.",
+    "metadata": {
+      "case_no": "2023-0942",
+      "case_display": "분쟁조정 2023-0942 ELS",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 42,
+      "award_ratio": 45,
+      "section": "당사자주장"
+    },
+    "labels": {
+      "issue_summary": "【당사자주장】 신청인은 원금 손실 위험을 제대로 설명받지 못했고 투자성향",
+      "keywords": [
+        "당사자주장",
+        "신청인은",
+        "원금",
+        "손실",
+        "위험을"
+      ],
+      "everyday_questions": [
+        "당사자주장 관련해서 문제가 있어요",
+        "신청인은 관련해서 문제가 있어요",
+        "원금 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2023-0942#판단",
+    "source_type": "decision",
+    "text": "【판단】 적합성원칙 및 설명의무 위반이 인정되며, 손실 위험 고지가 불충분하였다고 판단.",
+    "metadata": {
+      "case_no": "2023-0942",
+      "case_display": "분쟁조정 2023-0942 ELS",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 42,
+      "award_ratio": 45,
+      "section": "판단"
+    },
+    "labels": {
+      "issue_summary": "【판단】 적합성원칙 및 설명의무 위반이 인정되며, 손실 위험 고지가 불충",
+      "keywords": [
+        "판단",
+        "적합성원칙",
+        "설명의무",
+        "위반이",
+        "인정되며"
+      ],
+      "everyday_questions": [
+        "판단 관련해서 문제가 있어요",
+        "적합성원칙 관련해서 문제가 있어요",
+        "설명의무 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2023-0942#결정",
+    "source_type": "decision",
+    "text": "【결정】 과실상계를 반영하여 배상비율 45%로 조정한다.",
+    "metadata": {
+      "case_no": "2023-0942",
+      "case_display": "분쟁조정 2023-0942 ELS",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 42,
+      "award_ratio": 45,
+      "section": "결정"
+    },
+    "labels": {
+      "issue_summary": "【결정】 과실상계를 반영하여 배상비율 45%로 조정한다",
+      "keywords": [
+        "결정",
+        "과실상계를",
+        "반영하여",
+        "배상비율",
+        "조정한다"
+      ],
+      "everyday_questions": [
+        "결정 관련해서 문제가 있어요",
+        "과실상계를 관련해서 문제가 있어요",
+        "반영하여 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-0175#사건개요",
+    "source_type": "decision",
+    "text": "【사건개요】 예금 상담을 위해 방문한 고객에게 고위험 DLF를 권유한 건.",
+    "metadata": {
+      "case_no": "2024-0175",
+      "case_display": "분쟁조정 2024-0175 DLF",
+      "product_en": "DLF mis-selling",
+      "sector": "은행",
+      "business_days": 38,
+      "award_ratio": 40,
+      "section": "사건개요"
+    },
+    "labels": {
+      "issue_summary": "【사건개요】 예금 상담을 위해 방문한 고객에게 고위험 DLF를 권유한 건",
+      "keywords": [
+        "사건개요",
+        "예금",
+        "상담을",
+        "위해",
+        "방문한"
+      ],
+      "everyday_questions": [
+        "사건개요 관련해서 문제가 있어요",
+        "예금 관련해서 문제가 있어요",
+        "상담을 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-0175#당사자주장",
+    "source_type": "decision",
+    "text": "【당사자주장】 신청인은 예금과 유사한 안전 상품으로 오인하였다고 주장.",
+    "metadata": {
+      "case_no": "2024-0175",
+      "case_display": "분쟁조정 2024-0175 DLF",
+      "product_en": "DLF mis-selling",
+      "sector": "은행",
+      "business_days": 38,
+      "award_ratio": 40,
+      "section": "당사자주장"
+    },
+    "labels": {
+      "issue_summary": "【당사자주장】 신청인은 예금과 유사한 안전 상품으로 오인하였다고 주장",
+      "keywords": [
+        "당사자주장",
+        "신청인은",
+        "예금과",
+        "유사한",
+        "안전"
+      ],
+      "everyday_questions": [
+        "당사자주장 관련해서 문제가 있어요",
+        "신청인은 관련해서 문제가 있어요",
+        "예금과 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-0175#판단",
+    "source_type": "decision",
+    "text": "【판단】 설명의무 위반 및 부적합 권유가 인정된다.",
+    "metadata": {
+      "case_no": "2024-0175",
+      "case_display": "분쟁조정 2024-0175 DLF",
+      "product_en": "DLF mis-selling",
+      "sector": "은행",
+      "business_days": 38,
+      "award_ratio": 40,
+      "section": "판단"
+    },
+    "labels": {
+      "issue_summary": "【판단】 설명의무 위반 및 부적합 권유가 인정된다",
+      "keywords": [
+        "판단",
+        "설명의무",
+        "위반",
+        "부적합",
+        "권유가"
+      ],
+      "everyday_questions": [
+        "판단 관련해서 문제가 있어요",
+        "설명의무 관련해서 문제가 있어요",
+        "위반 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-0175#결정",
+    "source_type": "decision",
+    "text": "【결정】 배상비율 40%로 결정한다.",
+    "metadata": {
+      "case_no": "2024-0175",
+      "case_display": "분쟁조정 2024-0175 DLF",
+      "product_en": "DLF mis-selling",
+      "sector": "은행",
+      "business_days": 38,
+      "award_ratio": 40,
+      "section": "결정"
+    },
+    "labels": {
+      "issue_summary": "【결정】 배상비율 40%로 결정한다",
+      "keywords": [
+        "결정",
+        "배상비율",
+        "결정한다"
+      ],
+      "everyday_questions": [
+        "결정 관련해서 문제가 있어요",
+        "배상비율 관련해서 문제가 있어요",
+        "결정한다 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-1187#사건개요",
+    "source_type": "decision",
+    "text": "【사건개요】 고령 신청인에게 원금손실 가능성이 큰 ELS를 반복 권유한 건.",
+    "metadata": {
+      "case_no": "2024-1187",
+      "case_display": "금융감독원 조정 2024-1187",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 51,
+      "award_ratio": 40,
+      "section": "사건개요"
+    },
+    "labels": {
+      "issue_summary": "【사건개요】 고령 신청인에게 원금손실 가능성이 큰 ELS를 반복 권유한 ",
+      "keywords": [
+        "사건개요",
+        "고령",
+        "신청인에게",
+        "원금손실",
+        "가능성이"
+      ],
+      "everyday_questions": [
+        "사건개요 관련해서 문제가 있어요",
+        "고령 관련해서 문제가 있어요",
+        "신청인에게 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-1187#당사자주장",
+    "source_type": "decision",
+    "text": "【당사자주장】 손실보전을 약속받았다고 주장하며 녹취 일부를 제출.",
+    "metadata": {
+      "case_no": "2024-1187",
+      "case_display": "금융감독원 조정 2024-1187",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 51,
+      "award_ratio": 40,
+      "section": "당사자주장"
+    },
+    "labels": {
+      "issue_summary": "【당사자주장】 손실보전을 약속받았다고 주장하며 녹취 일부를 제출",
+      "keywords": [
+        "당사자주장",
+        "손실보전을",
+        "약속받았다고",
+        "주장하며",
+        "녹취"
+      ],
+      "everyday_questions": [
+        "당사자주장 관련해서 문제가 있어요",
+        "손실보전을 관련해서 문제가 있어요",
+        "약속받았다고 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-1187#판단",
+    "source_type": "decision",
+    "text": "【판단】 부당권유 정황과 설명의무 미이행이 확인된다.",
+    "metadata": {
+      "case_no": "2024-1187",
+      "case_display": "금융감독원 조정 2024-1187",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 51,
+      "award_ratio": 40,
+      "section": "판단"
+    },
+    "labels": {
+      "issue_summary": "【판단】 부당권유 정황과 설명의무 미이행이 확인된다",
+      "keywords": [
+        "판단",
+        "부당권유",
+        "정황과",
+        "설명의무",
+        "미이행이"
+      ],
+      "everyday_questions": [
+        "판단 관련해서 문제가 있어요",
+        "부당권유 관련해서 문제가 있어요",
+        "정황과 관련해서 문제가 있어요"
+      ]
+    }
+  },
+  {
+    "chunk_id": "2024-1187#결정",
+    "source_type": "decision",
+    "text": "【결정】 배상비율 40%를 인용한다.",
+    "metadata": {
+      "case_no": "2024-1187",
+      "case_display": "금융감독원 조정 2024-1187",
+      "product_en": "ELS mis-selling",
+      "sector": "증권",
+      "business_days": 51,
+      "award_ratio": 40,
+      "section": "결정"
+    },
+    "labels": {
+      "issue_summary": "【결정】 배상비율 40%를 인용한다",
+      "keywords": [
+        "결정",
+        "배상비율",
+        "인용한다"
+      ],
+      "everyday_questions": [
+        "결정 관련해서 문제가 있어요",
+        "배상비율 관련해서 문제가 있어요",
+        "인용한다 관련해서 문제가 있어요"
+      ]
+    }
+  }
+]

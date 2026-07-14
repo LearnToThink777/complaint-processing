@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>민원 처리 콘솔 · 에이전트 렌더러</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#30363d;
+    --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --good:#3fb950;
+    --warn:#d29922; --bad:#f85149; --chip:#21262d;
+    --u:#1f6feb; --r:#8957e5;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f6f8fa;--panel:#fff;--panel2:#f0f3f6;--border:#d0d7de;
+      --fg:#1f2328;--muted:#636c76;--chip:#eaeef2;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:"Segoe UI","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px}
+  header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:14px}
+  header.top h1{font-size:16px;margin:0;font-weight:600}
+  .caseid{color:var(--muted);font-family:"Consolas",monospace;font-size:12px}
+  .badge{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;
+    background:var(--chip);border:1px solid var(--border)}
+  .badge.status{background:var(--accent);color:#fff;border:none}
+  .controls{display:flex;align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px}
+  .controls button{background:var(--chip);color:var(--fg);border:1px solid var(--border);
+    border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+  .controls button:hover{border-color:var(--accent)}
+  .controls input[type=range]{flex:1;accent-color:var(--accent)}
+  .stepno{font-family:monospace;color:var(--muted);min-width:70px}
+  .phase{font-weight:600}
+  .hop{color:var(--muted);font-size:12px;margin-left:auto}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;overflow:hidden}
+  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+    margin:0 0 10px;font-weight:600}
+  .panel.full{grid-column:1/-1}
+  /* checklist */
+  .cl-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--border)}
+  .cl-item:last-child{border:none}
+  .dot{width:16px;height:16px;border-radius:50%;flex:none;display:grid;place-items:center;
+    font-size:11px;border:1px solid var(--border)}
+  .dot.done{background:var(--good);color:#fff;border:none}
+  .cl-law{color:var(--muted);font-size:12px;margin-left:auto;font-family:monospace}
+  .cl-src{color:var(--accent);font-size:11px;margin-left:auto;font-family:monospace;
+    background:var(--chip);padding:1px 7px;border-radius:6px;border:1px solid var(--border)}
+  .cl-src::before{content:"🔎 "}
+  .ret-tag{float:right;font-size:10px;color:var(--accent);background:var(--chip);
+    border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-weight:600;letter-spacing:0}
+  .ret-note{color:var(--muted);font-size:11px;margin-bottom:8px;font-style:italic}
+  /* ledger */
+  .led{padding:8px;border-radius:8px;background:var(--panel2);margin-bottom:6px}
+  .led .code{font-family:monospace;font-size:12px;color:var(--accent)}
+  .verd{padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;margin-left:6px;background:var(--chip)}
+  .verd.위반,.verd.미이행,.verd.하자{background:var(--bad);color:#fff}
+  .verd.해당,.verd.선례{background:var(--warn);color:#111}
+  .verd.산정{background:var(--good);color:#fff}
+  .led .detail{color:var(--muted);font-size:12px;margin-top:3px}
+  /* disclosure */
+  .disc{border-left:3px solid var(--u);padding:8px 10px;border-radius:0 8px 8px 0;background:var(--panel2);margin-bottom:8px}
+  .disc.r{border-color:var(--r)}
+  .disc .t{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:3px}
+  /* vector */
+  .risk{background:var(--bad);color:#fff;padding:6px 10px;border-radius:8px;font-weight:600;margin-bottom:8px;font-size:13px}
+  .vrow{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--border);font-size:13px}
+  .vrow:last-child{border:none}
+  .vdur{font-family:monospace;color:var(--muted)}
+  .empty{color:var(--muted);font-style:italic}
+  .nego{display:inline-block;padding:2px 9px;border-radius:6px;font-size:12px;font-weight:600}
+  .nego.active{background:var(--warn);color:#111}
+  .nego.resolved{background:var(--good);color:#fff}
+  .nego.none{background:var(--chip);color:var(--muted)}
+  .meta{color:var(--muted);font-size:12px}
+  .badge.unclassified{background:var(--chip);color:var(--muted);border:1px dashed var(--border);font-weight:400}
+  .badge.classified{background:var(--accent);color:#fff}
+  .badge.classified::before{content:"🤖 "}
+  /* cross-link to mediation console */
+  .xlink{margin-left:auto;text-decoration:none;font-size:12px;font-weight:600;color:var(--accent);
+    background:var(--chip);border:1px solid var(--border);border-radius:8px;padding:6px 12px;white-space:nowrap}
+  .xlink:hover{border-color:var(--accent)}
+  .xlink .arw{opacity:.7;font-weight:400}
+  /* 중재 콘솔 진입 CTA — 협상이 벌어지는 재협상 패널 안에서 눈에 띄게 */
+  .med-cta{display:flex;flex-direction:column;gap:3px;margin-top:12px;text-decoration:none;
+    background:var(--u);color:#fff;border-radius:10px;padding:12px 14px;
+    border:1px solid transparent;transition:transform .08s}
+  .med-cta:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .med-cta .med-top{font-weight:700;font-size:14px;display:flex;align-items:center;gap:7px}
+  .med-cta .med-sub{font-weight:400;font-size:12px;opacity:.92}
+  .med-cta.active,.med-cta.resolved{box-shadow:0 0 0 2px var(--accent);
+    animation:medpulse 1.6s ease-in-out infinite}
+  @keyframes medpulse{0%,100%{box-shadow:0 0 0 2px var(--accent)}50%{box-shadow:0 0 0 4px var(--accent)}}
+  .med-cta .med-badge{margin-left:auto;font-size:10px;font-weight:700;background:rgba(255,255,255,.22);
+    padding:2px 8px;border-radius:999px}
+  /* view switch */
+  .viewsw{display:flex;gap:0;background:var(--chip);border:1px solid var(--border);
+    border-radius:8px;overflow:hidden}
+  .viewsw button{background:transparent;color:var(--muted);border:none;padding:5px 12px;
+    cursor:pointer;font-size:12px;font-weight:600}
+  .viewsw button.on{background:var(--accent);color:#fff}
+  /* 뷰 분리: 감독원용 공개는 내부 직원만, 민원인용 공개는 민원인만 */
+  body.view-complainant .staff-only{display:none !important}
+  body.view-staff .complainant-only{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 id="title">민원 처리 콘솔</h1>
+    <span class="caseid" id="caseid"></span>
+    <span class="badge classification staff-only" id="classification"></span>
+    <span class="badge status" id="status"></span>
+    <span class="meta" id="due"></span>
+    <a class="xlink" id="xlink" href="#" hidden></a>
+    <div class="viewsw">
+      <button id="viewStaff" class="on">🏛 내부 직원용</button>
+      <button id="viewCompl">🙋 민원인용</button>
+    </div>
+  </header>
+
+  <div class="controls">
+    <button id="prev">◀ 이전</button>
+    <button id="play">▶ 재생</button>
+    <button id="next">다음 ▶</button>
+    <span class="stepno" id="stepno"></span>
+    <input type="range" id="slider" min="0" value="0">
+    <span class="phase staff-only" id="phase"></span>
+    <span class="hop staff-only" id="hop"></span>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>③ 검토 항목 · 관련 법령·절차 조회 <span class="ret-tag" id="retTag">🔎 vectorDB</span></h2>
+      <div id="checklist"></div>
+    </div>
+    <div class="panel">
+      <h2>② 적용 법률 원장</h2>
+      <div id="ledger"></div>
+    </div>
+    <div class="panel">
+      <h2 id="discTitle">이중 공개</h2>
+      <div class="disc complainant-only" id="discU"><div class="t"></div><div class="b"></div></div>
+      <div class="disc r staff-only" id="discR"><div class="t"></div><div class="b"></div></div>
+    </div>
+    <div class="panel">
+      <h2>사례 DB (벡터 검색) · 재협상</h2>
+      <div id="vector"></div>
+      <div style="margin-top:10px">협상 상태: <span class="nego" id="nego"></span></div>
+      <div id="medCta"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let FRAMES=[], i=0, timer=null, MEDIATED=new Set();
+const $=id=>document.getElementById(id);
+
+function render(){
+  const f=FRAMES[i]; if(!f)return;
+  $('caseid').textContent=f.case_id;
+  const xl=$('xlink');
+  if(MEDIATED.has(f.case_id)){
+    xl.hidden=false;
+    xl.href='mediation.html?case='+encodeURIComponent(f.case_id);
+    xl.innerHTML='중재 콘솔 <span class="arw">— 이 사건의 상담·협상 기록 →</span>';
+  }else{ xl.hidden=true; }
+  const cls=$('classification');
+  if(f.classification){ cls.className='badge classified staff-only'; cls.textContent=f.classification; }
+  else{ cls.className='badge unclassified staff-only'; cls.textContent='[접수 안됨]'; }
+  $('status').textContent=f.status+' / '+f.status_en;
+  $('due').textContent=f.due_date?('처리 기한 '+f.due_date):'';
+  $('stepno').textContent=`STEP ${String(i).padStart(2,'0')}/${FRAMES.length-1}`;
+  $('phase').textContent=f.phase_ko;
+  $('hop').textContent=f.hop;
+  $('slider').value=i;
+
+  const retrieved = f.checklist.length > 0;
+  const clNote = retrieved
+    ? '이관 시 에이전트가 사건 사실만 읽고 vectorDB를 조회해 검토 항목을 도출함'
+    : '이관 전 — 어떤 민원인지 모르므로 검토 항목이 아직 없음';
+  $('checklist').innerHTML = `<div class="ret-note">${clNote}</div>` + f.checklist.map(c=>`
+    <div class="cl-item">
+      <span class="dot ${c.done?'done':''}">${c.done?'✓':c.n}</span>
+      <span>${c.item}</span>
+      ${c.source ? `<span class="cl-src">${c.source}</span>` : `<span class="cl-law">${c.law}</span>`}
+    </div>`).join('');
+
+  $('ledger').innerHTML = f.ledger.length ? f.ledger.map(l=>`
+    <div class="led">
+      <span class="code">${l.code}</span>
+      <span class="verd ${l.verdict}">${l.verdict}</span>
+      <div>${l.ko}</div>
+      <div class="detail">${l.detail}</div>
+    </div>`).join('') : '<div class="empty">원장 비어 있음</div>';
+
+  const u=f.disclose_u, r=f.disclose_r;
+  $('discU').querySelector('.t').textContent='🙋 '+u.title;
+  $('discU').querySelector('.b').textContent=u.body;
+  $('discR').querySelector('.t').textContent='🏛 '+r.title;
+  $('discR').querySelector('.b').textContent=r.body;
+
+  let vhtml='';
+  if(f.risk) vhtml+='<div class="risk">⚠ 예상 완료일이 처리 기한을 초과할 위험</div>';
+  if(f.vector && f.vector.length){
+    vhtml+=f.vector.map(v=>`<div class="vrow"><span>${v.case}</span><span class="vdur">${v.dur}</span></div>`).join('');
+  }else{
+    vhtml+='<div class="empty">아직 유사 사례 조회 전</div>';
+  }
+  $('vector').innerHTML=vhtml;
+  const n=$('nego'); n.className='nego '+f.nego_state;
+  n.textContent={none:'없음',active:'협상 중',resolved:'합의됨'}[f.nego_state]||f.nego_state;
+
+  // 중재 콘솔 진입 — 협상 맥락에서 눈에 띄게 출현. 상태별로 문구·강조가 달라진다.
+  const cta=$('medCta');
+  if(MEDIATED.has(f.case_id)){
+    const copy={
+      none:    {sub:'이 사건의 상담·협의 과정을 그대로 볼 수 있어요', badge:'기록'},
+      active:  {sub:'지금 협상이 진행 중 — 어떤 쟁점이 오가는지 열어보기', badge:'진행 중'},
+      resolved:{sub:'협상이 합의됐어요 — 무엇을 근거로 중재됐는지 보기', badge:'합의됨'},
+    }[f.nego_state] || {sub:'상담·중재 과정 보기', badge:''};
+    cta.innerHTML=`<a class="med-cta ${f.nego_state}" href="mediation.html?case=${encodeURIComponent(f.case_id)}">
+      <span class="med-top">🤝 중재 콘솔 열기${copy.badge?`<span class="med-badge">${copy.badge}</span>`:''}</span>
+      <span class="med-sub">${copy.sub}</span></a>`;
+  }else{ cta.innerHTML=''; }
+}
+function go(d){ i=Math.max(0,Math.min(FRAMES.length-1,i+d)); render(); }
+function stop(){ if(timer){clearInterval(timer);timer=null;$('play').textContent='▶ 재생';} }
+
+function setView(mode){
+  const compl = mode==='complainant';
+  document.body.classList.toggle('view-complainant', compl);
+  document.body.classList.toggle('view-staff', !compl);
+  $('viewCompl').classList.toggle('on', compl);
+  $('viewStaff').classList.toggle('on', !compl);
+  $('title').textContent = compl ? '민원 처리 진행 안내' : '민원 처리 콘솔';
+  $('discTitle').textContent = compl ? '진행 안내' : '검토 결과 (회사·감독원용)';
+}
+$('viewStaff').onclick=()=>setView('staff');
+$('viewCompl').onclick=()=>setView('complainant');
+setView('staff');
+
+$('prev').onclick=()=>{stop();go(-1)};
+$('next').onclick=()=>{stop();go(1)};
+$('slider').oninput=e=>{stop();i=+e.target.value;render()};
+$('play').onclick=()=>{
+  if(timer){stop();return;}
+  $('play').textContent='⏸ 정지';
+  timer=setInterval(()=>{ if(i>=FRAMES.length-1){stop();return;} go(1); },1100);
+};
+
+// 중재 기록이 있는 사건만 링크를 띄우기 위해 매핑을 미리 로드(실패해도 무시).
+fetch('mediation.json').then(r=>r.json())
+  .then(m=>{ MEDIATED=new Set(m.map(r=>r.linked_case).filter(Boolean)); render(); })
+  .catch(()=>{});
+
+fetch('frames.json').then(r=>r.json()).then(d=>{
+  FRAMES=d; $('slider').max=d.length-1; render();
+}).catch(e=>{ document.body.innerHTML='<div class="wrap">frames.json 로드 실패: '+e+'</div>'; });
+</script>
+</body>
+</html>

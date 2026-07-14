@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>중재 콘솔 · 리걸메이트</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#30363d;
+    --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --good:#3fb950;
+    --warn:#d29922; --bad:#f85149; --chip:#21262d;
+    --a:#1f6feb; --b:#8957e5; --neutral:#8b949e;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f6f8fa;--panel:#fff;--panel2:#f0f3f6;--border:#d0d7de;
+      --fg:#1f2328;--muted:#636c76;--chip:#eaeef2;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:"Segoe UI","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.55}
+  .wrap{max-width:1140px;margin:0 auto;padding:20px}
+  header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:10px}
+  header.top h1{font-size:16px;margin:0;font-weight:600}
+  .caseid{color:var(--muted);font-family:"Consolas",monospace;font-size:12px}
+  .domain{color:var(--muted);font-size:13px}
+  .xlink{margin-left:auto;text-decoration:none;font-size:12px;font-weight:600;color:var(--accent);
+    background:var(--chip);border:1px solid var(--border);border-radius:8px;padding:6px 12px;white-space:nowrap}
+  .xlink:hover{border-color:var(--accent)}
+  .xlink .arw{opacity:.7;font-weight:400}
+  .badge{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;
+    background:var(--chip);border:1px solid var(--border)}
+  /* 시나리오 탭 */
+  .scenarios{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+  .scenarios button{background:var(--chip);color:var(--fg);border:1px solid var(--border);
+    border-radius:9px;padding:8px 12px;cursor:pointer;font-size:12px;text-align:left;max-width:340px}
+  .scenarios button:hover{border-color:var(--accent)}
+  .scenarios button.on{border-color:var(--accent);background:var(--panel);box-shadow:inset 0 0 0 1px var(--accent)}
+  .scenarios .sc-id{font-family:monospace;color:var(--muted);font-size:10px;display:block}
+  /* 권한 경계 고지 */
+  .boundary{background:var(--panel2);border:1px solid var(--border);border-left:3px solid var(--warn);
+    border-radius:0 10px 10px 0;padding:9px 12px;margin-bottom:14px;font-size:12.5px;color:var(--muted)}
+  .boundary b{color:var(--fg)}
+  /* 뷰(당사자) 전환 */
+  .viewbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .viewbar .lab{font-size:12px;color:var(--muted)}
+  .viewsw{display:flex;gap:0;background:var(--chip);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .viewsw button{background:transparent;color:var(--muted);border:none;padding:6px 13px;cursor:pointer;font-size:12px;font-weight:600}
+  .viewsw button.on{color:#fff}
+  .viewsw button.on[data-side="A"]{background:var(--a)}
+  .viewsw button.on[data-side="B"]{background:var(--b)}
+  .viewsw button.on[data-side="shared"]{background:var(--muted);color:#111}
+  .viewnote{font-size:11.5px;color:var(--muted);font-style:italic}
+  .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:14px;align-items:start}
+  @media (max-width:820px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+    margin:0 0 4px;font-weight:600}
+  .panel .sub{font-size:11.5px;color:var(--muted);margin:0 0 12px}
+  .stack{display:flex;flex-direction:column;gap:14px}
+  /* 쟁점 중재 원장 */
+  .issue{border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:11px;background:var(--panel2)}
+  .issue:last-child{margin-bottom:0}
+  .issue .code{font-family:monospace;font-size:11px;color:var(--accent);background:var(--chip);
+    padding:1px 7px;border-radius:6px;border:1px solid var(--border)}
+  .issue .title{font-weight:600;margin:7px 0 9px;font-size:13.5px}
+  .status{float:right;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px}
+  .status.미확정{background:var(--bad);color:#fff}
+  .status.확인중{background:var(--warn);color:#111}
+  .status.자료대기{background:var(--a);color:#fff}
+  .status.정리완료{background:var(--good);color:#fff}
+  .sides{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:9px}
+  @media (max-width:520px){.sides{grid-template-columns:1fr}}
+  .sidebox{border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--panel)}
+  .sidebox.A{border-top:2px solid var(--a)}
+  .sidebox.B{border-top:2px solid var(--b)}
+  .sidebox .who{font-size:11px;font-weight:700;margin-bottom:5px}
+  .sidebox.A .who{color:var(--a)} .sidebox.B .who{color:var(--b)}
+  .fa{font-size:12px;margin:3px 0;padding-left:15px;text-indent:-15px}
+  .fa .k{font-weight:700;font-size:10.5px;padding:0 5px;border-radius:5px;margin-right:4px}
+  .fa .k.pro{background:rgba(63,185,80,.18);color:var(--good)}
+  .fa .k.con{background:rgba(248,81,73,.16);color:var(--bad)}
+  .note{font-size:12.5px;background:var(--chip);border-radius:8px;padding:8px 10px;margin-top:4px}
+  .note .lm{font-weight:700;color:var(--accent)}
+  .decider{font-size:11.5px;color:var(--muted);margin-top:7px}
+  .decider b{color:var(--warn)}
+  /* 당사자 뷰 강조/디밍 */
+  .view-A .sidebox.B, .view-B .sidebox.A{opacity:.4}
+  .view-A .sidebox.A{box-shadow:0 0 0 1px var(--a)}
+  .view-B .sidebox.B{box-shadow:0 0 0 1px var(--b)}
+  /* 중립성 밸런스 */
+  .balbar{display:flex;height:26px;border-radius:8px;overflow:hidden;border:1px solid var(--border);margin-bottom:8px}
+  .balbar span{display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;min-width:0}
+  .balbar .segA{background:var(--a)} .balbar .segN{background:var(--neutral);color:#111} .balbar .segB{background:var(--b)}
+  .ballegend{display:flex;gap:12px;font-size:11px;color:var(--muted);margin-bottom:10px;flex-wrap:wrap}
+  .ballegend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+  .balrow{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px dashed var(--border);font-size:12px}
+  .balrow:last-child{border:none}
+  .lean{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:5px;flex:none}
+  .lean.A{background:var(--a);color:#fff} .lean.B{background:var(--b);color:#fff} .lean.neutral{background:var(--chip);color:var(--muted);border:1px solid var(--border)}
+  .ref{font-family:monospace;color:var(--muted);font-size:10.5px;flex:none}
+  .balnote{font-size:11.5px;color:var(--muted);font-style:italic;margin-top:9px;border-top:1px solid var(--border);padding-top:8px}
+  /* 공유 처리이력 타임라인 */
+  .tl{position:relative;padding-left:16px}
+  .tl::before{content:"";position:absolute;left:4px;top:4px;bottom:4px;width:2px;background:var(--border)}
+  .tlrow{position:relative;padding:5px 0 5px 4px}
+  .tlrow::before{content:"";position:absolute;left:-14px;top:9px;width:9px;height:9px;border-radius:50%;
+    background:var(--panel);border:2px solid var(--muted)}
+  .tlrow.자문::before{border-color:var(--accent)}
+  .tlrow.서기::before{border-color:var(--good)}
+  .tlrow.발언::before{border-color:var(--warn)}
+  .tlkind{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:5px;margin-right:6px}
+  .tlkind.자문{background:rgba(88,166,255,.16);color:var(--accent)}
+  .tlkind.서기{background:rgba(63,185,80,.16);color:var(--good)}
+  .tlkind.발언{background:rgba(210,153,34,.16);color:var(--warn)}
+  .tlseq{font-family:monospace;font-size:10px;color:var(--muted);margin-right:6px}
+  .tltext{font-size:12.5px}
+  .tlrow.me .tltext{font-weight:600}
+  .tlrow.me::before{width:11px;height:11px;left:-15px}
+  /* 재생 컨트롤 — 대화 순서대로 등장 */
+  .controls{display:flex;align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--border);border-radius:10px;padding:9px 13px;margin-bottom:14px;flex-wrap:wrap}
+  .controls button{background:var(--chip);color:var(--fg);border:1px solid var(--border);
+    border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+  .controls button:hover{border-color:var(--accent)}
+  .controls input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
+  .stepno{font-family:monospace;color:var(--muted);font-size:12px;min-width:126px}
+  .curmsg{color:var(--fg);font-size:12px;flex-basis:100%;opacity:.9}
+  .curmsg .k{font-weight:700;padding:1px 6px;border-radius:5px;margin-right:6px;font-size:10.5px}
+  .curmsg .k.자문{background:rgba(88,166,255,.16);color:var(--accent)}
+  .curmsg .k.서기{background:rgba(63,185,80,.16);color:var(--good)}
+  .curmsg .k.발언{background:rgba(210,153,34,.16);color:var(--warn)}
+  .revnote{font-size:11.5px;color:var(--muted);margin-bottom:9px}
+  .revnote b{color:var(--accent)}
+  /* 등장 애니메이션 — 현재 스텝에 새로 나타난 항목만 */
+  @keyframes appear{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .issue.now,.balrow.now,.tlrow.now{animation:appear .32s ease both}
+  .issue.now{box-shadow:0 0 0 2px var(--accent)}
+  .balrow.now{background:rgba(88,166,255,.10);border-radius:6px}
+  .tlrow.now .tltext{font-weight:700}
+  .tlrow.now::before{transform:scale(1.3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>중재 콘솔 · 리걸메이트</h1>
+    <span class="caseid" id="caseid"></span>
+    <span class="domain" id="domain"></span>
+    <a class="xlink" id="xlink" href="#" hidden></a>
+  </header>
+
+  <div class="scenarios" id="scenarios"></div>
+
+  <div class="boundary" id="boundary"></div>
+
+  <div class="viewbar">
+    <span class="lab">당사자 뷰</span>
+    <div class="viewsw" id="viewsw"></div>
+    <span class="viewnote" id="viewnote"></span>
+  </div>
+
+  <div class="controls">
+    <button id="prev">◀ 이전</button>
+    <button id="play">▶ 재생</button>
+    <button id="next">다음 ▶</button>
+    <span class="stepno" id="stepno"></span>
+    <input type="range" id="slider" min="0" value="0">
+    <span class="curmsg" id="curmsg"></span>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>쟁점 중재 원장</h2>
+      <p class="sub">쟁점마다 양측의 유리·불리를 대칭으로 기록합니다. 에이전트는 판정하지 않고 판단 주체를 명시합니다.</p>
+      <div id="issues"></div>
+    </div>
+    <div class="stack">
+      <div class="panel">
+        <h2>중립성 밸런스</h2>
+        <p class="sub">에이전트 자문이 어느 쪽에 유리하게 작용했는지 집계 — '누구 편이냐'는 물음에 대한 근거입니다.</p>
+        <div id="balbar" class="balbar"></div>
+        <div class="ballegend">
+          <span><i style="background:var(--a)"></i><span id="labA"></span></span>
+          <span><i style="background:var(--neutral)"></i>중립</span>
+          <span><i style="background:var(--b)"></i><span id="labB"></span></span>
+        </div>
+        <div id="balrows"></div>
+        <div class="balnote" id="balnote"></div>
+      </div>
+      <div class="panel">
+        <h2>공유 처리이력 타임라인</h2>
+        <p class="sub">양측이 <b>동일한 사본</b>을 봅니다. 뷰를 바꿔도 기록은 그대로이고, 내 발언만 강조됩니다.</p>
+        <div id="timeline" class="tl"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let DATA=[], si=0, view='shared', step=0, timer=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function partyBySide(rec,side){ return rec.parties.find(p=>p.side===side); }
+function partyByKey(rec,key){ return rec.parties.find(p=>p.key===key); }
+
+function renderScenarios(){
+  $('scenarios').innerHTML = DATA.map((r,idx)=>`
+    <button class="${idx===si?'on':''}" data-idx="${idx}">
+      <span class="sc-id">${esc(r.case_id)}</span>${esc(r.domain)}
+    </button>`).join('');
+  [...$('scenarios').children].forEach(b=>b.onclick=()=>{
+    stop(); si=+b.dataset.idx; view='shared'; step=DATA[si].log.length-1; render();
+  });
+}
+
+function renderViewSwitch(rec){
+  const A=partyBySide(rec,'A'), B=partyBySide(rec,'B');
+  $('viewsw').innerHTML=`
+    <button data-side="shared" class="${view==='shared'?'on':''}">⚖ 공유(중립)</button>
+    <button data-side="A" class="${view==='A'?'on':''}">${esc(A.role)}</button>
+    <button data-side="B" class="${view==='B'?'on':''}">${esc(B.role)}</button>`;
+  [...$('viewsw').children].forEach(b=>b.onclick=()=>{ view=b.dataset.side; render(); });
+  $('viewnote').textContent = view==='shared'
+    ? '양측이 함께 보는 중립 화면'
+    : `${(view==='A'?A:B).name} 관점 — 내 유리·불리를 강조(기록 자체는 동일)`;
+}
+
+function renderControls(rec, curSeq){
+  const L=rec.log.length, cur=rec.log[step];
+  $('slider').max=L-1; $('slider').value=step;
+  $('stepno').textContent=`등장 ${String(step+1).padStart(2,'0')}/${L} · 메시지 [${curSeq}]`;
+  $('curmsg').innerHTML=`<span class="k ${cur.kind}">${esc(cur.kind)}</span>${esc(cur.text)}`;
+}
+
+function renderIssues(rec, curSeq){
+  const A=partyBySide(rec,'A'), B=partyBySide(rec,'B');
+  const shown=rec.issues.filter(it=>Math.min(...it.refs)<=curSeq);
+  const rev=`<div class="revnote">쟁점 <b>${shown.length}</b>/${rec.issues.length} 등장 · 대화가 진행되며 쟁점이 순서대로 나타납니다</div>`;
+  $('issues').innerHTML = rev + shown.map(it=>{
+    const now = it.refs.includes(curSeq);
+    return `
+    <div class="issue${now?' now':''}">
+      <span class="status ${it.status}">${esc(it.status)}</span>
+      <span class="code">${esc(it.code)}</span>
+      <div class="title">${esc(it.title)}</div>
+      <div class="sides">
+        <div class="sidebox A">
+          <div class="who">${esc(A.role)} (A)</div>
+          <div class="fa"><span class="k pro">유리</span>${esc(it.for_a)}</div>
+          <div class="fa"><span class="k con">불리</span>${esc(it.against_a)}</div>
+        </div>
+        <div class="sidebox B">
+          <div class="who">${esc(B.role)} (B)</div>
+          <div class="fa"><span class="k pro">유리</span>${esc(it.for_b)}</div>
+          <div class="fa"><span class="k con">불리</span>${esc(it.against_b)}</div>
+        </div>
+      </div>
+      <div class="note"><span class="lm">자문</span> ${esc(it.agent_note)}</div>
+      <div class="decider">판단 주체(에이전트 아님): <b>${esc(it.decider)}</b> · 근거 메시지 ${renderRefs(it.refs, curSeq)}</div>
+    </div>`;
+  }).join('');
+}
+
+// 아직 타임라인에 등장하지 않은(curSeq 미도달) 근거 번호는 인용하지 않는다 —
+// 쟁점 카드가 미래 시점 메시지를 이미 인용한 것처럼 보이는 시점 불일치를 막기 위함.
+function renderRefs(refs, curSeq){
+  return refs.filter(n=>n<=curSeq).map(n=>'['+n+']').join(' ');
+}
+
+function renderBalance(rec, curSeq){
+  const A=partyBySide(rec,'A'), B=partyBySide(rec,'B');
+  const e=rec.balance.entries.filter(x=>x.ref<=curSeq);
+  const cA=e.filter(x=>x.leans==='A').length,
+        cB=e.filter(x=>x.leans==='B').length,
+        cN=e.filter(x=>x.leans==='neutral').length;
+  $('labA').textContent=`${A.role} 유리 (${cA})`;
+  $('labB').textContent=`${B.role} 유리 (${cB})`;
+  $('balbar').innerHTML=
+    `<span class="segA" style="flex:${cA}">${cA?cA:''}</span>`+
+    `<span class="segN" style="flex:${cN}">${cN?cN:''}</span>`+
+    `<span class="segB" style="flex:${cB}">${cB?cB:''}</span>`;
+  $('balrows').innerHTML=e.map(x=>{
+    const now = x.ref===curSeq;
+    const lbl = x.leans==='A'?`${A.role} 유리`:x.leans==='B'?`${B.role} 유리`:'중립';
+    return `<div class="balrow${now?' now':''}"><span class="ref">[${x.ref}]</span>
+      <span class="lean ${x.leans}">${esc(lbl)}</span>
+      <span>${esc(x.summary)}</span></div>`;
+  }).join('') || '<div class="empty" style="color:var(--muted);font-style:italic;font-size:12px">아직 집계된 자문이 없습니다</div>';
+  $('balnote').textContent=rec.balance.note;
+}
+
+function renderTimeline(rec, curSeq){
+  const meKey = view==='shared' ? null : partyBySide(rec,view).key;
+  $('timeline').innerHTML = rec.log.slice(0, step+1).map((l,idx)=>{
+    const mine = meKey && l.speaker===meKey;
+    const now = idx===step;
+    return `<div class="tlrow ${l.kind}${mine?' me':''}${now?' now':''}">
+      <span class="tlseq">[${l.seq}]</span>
+      <span class="tlkind ${l.kind}">${esc(l.kind)}</span>
+      <span class="tltext">${esc(l.text)}</span></div>`;
+  }).join('');
+}
+
+function renderLink(rec){
+  const a=$('xlink');
+  if(rec.linked_case){
+    a.hidden=false;
+    a.href='viewer.html?case='+encodeURIComponent(rec.linked_case);
+    a.innerHTML=`민원 처리 콘솔 <span class="arw">— 이 상담의 판정·공개 결과 [${esc(rec.linked_case)}] →</span>`;
+  }else{
+    a.hidden=true;
+  }
+}
+
+function render(){
+  const rec=DATA[si]; if(!rec)return;
+  const L=rec.log.length;
+  if(step>L-1) step=L-1; if(step<0) step=0;
+  const curSeq=rec.log[step].seq;
+  $('caseid').textContent=rec.case_id;
+  $('domain').textContent=rec.domain;
+  renderLink(rec);
+  $('boundary').innerHTML=`<b>권한 경계</b> · ${esc(rec.boundary)}`;
+  document.body.className = view==='shared' ? '' : 'view-'+view;
+  renderScenarios();
+  renderViewSwitch(rec);
+  renderControls(rec, curSeq);
+  renderIssues(rec, curSeq);
+  renderBalance(rec, curSeq);
+  renderTimeline(rec, curSeq);
+}
+
+function go(d){ stop(); const L=DATA[si].log.length; step=Math.max(0,Math.min(L-1,step+d)); render(); }
+function stop(){ if(timer){clearInterval(timer);timer=null; $('play').textContent='▶ 재생';} }
+$('prev').onclick=()=>go(-1);
+$('next').onclick=()=>go(1);
+$('slider').oninput=e=>{ stop(); step=+e.target.value; render(); };
+$('play').onclick=()=>{
+  if(timer){stop();return;}
+  if(step>=DATA[si].log.length-1) step=0;   // 끝이면 처음부터 다시 재생
+  $('play').textContent='⏸ 정지';
+  timer=setInterval(()=>{ if(step>=DATA[si].log.length-1){stop();return;} step++; render(); },1100);
+};
+
+function preselect(){
+  const p=new URLSearchParams(location.search);
+  const caseId=p.get('case'), s=p.get('s');
+  if(caseId){
+    const idx=DATA.findIndex(r=>r.case_id===caseId || r.linked_case===caseId);
+    if(idx>=0){ si=idx; return; }
+  }
+  if(s!==null && !isNaN(+s) && +s>=0 && +s<DATA.length){ si=+s; }
+}
+
+fetch('mediation.json').then(r=>r.json()).then(d=>{
+  DATA=d; preselect(); step=DATA[si].log.length-1; render();   // 기본은 전체(종결) 상태, ▶로 처음부터 등장 재생
+}).catch(e=>{ document.body.innerHTML='<div class="wrap">mediation.json 로드 실패: '+e+'</div>'; });
+</script>
+</body>
+</html>
