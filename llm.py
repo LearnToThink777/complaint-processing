@@ -193,18 +193,39 @@ class RetrievalLLM(LLMBackend):
         return self._base.structured(task, schema, context)
 
 
-def get_backend(use_llm: bool = False, retrieval_index: str | Path | None = None, *, facts: str = "") -> LLMBackend:
-    """LLM 전략을 골라 조립하는 팩토리 메서드(Factory Method).
+def get_backend(
+    use_llm: bool = False,
+    retrieval_index: str | Path | None = None,
+    *,
+    facts: str = "",
+    observe: bool = True,
+    retries: int = 0,
+    cache: bool = False,
+) -> LLMBackend:
+    """LLM 전략을 골라 데코레이터까지 조립하는 팩토리 메서드(Factory Method).
 
-    호출부는 "어떤 전략이 필요한지"(use_llm/retrieval_index)만 말하고, 어떤 구체 클래스를
-    어떻게 생성·조합하는지는 이 함수가 캡슐화한다. 기본은 MockLLM(오프라인),
-    use_llm=True면 ProxyLLM(실제 LLM)을 시도한다.
+    호출부는 "어떤 전략/기능이 필요한지"만 말하고, 어떤 구체 클래스를 어떻게 생성·조합할지는
+    이 함수가 캡슐화한다. 기본은 MockLLM(오프라인), use_llm=True면 ProxyLLM(실제 LLM).
 
     retrieval_index를 주면 그 위에 RetrievalLLM(데코레이터)을 덧씌워 #0/#3만 실검색으로
-    바꾼다. #1/#2/#4/#5는 base(use_llm에 따라 Mock/Proxy)가 그대로 담당한다.
+    바꾼다. #1/#2/#4/#5는 base(Mock/Proxy)가 담당한다.
+
+    관측/재시도/캐시는 데코레이터로 겉을 감싼다(AgentOps 이음새) — 감싸도 출력은 동일하다:
+      - observe=True(기본): ObservableLLM 으로 호출별 소요시간·성공/실패 계측
+      - retries>0        : RetryingLLM 으로 실패 재시도
+      - cache=True       : CachingLLM 으로 동일 호출 결과 캐시
     """
 
     base: LLMBackend = ProxyLLM() if use_llm else MockLLM()
-    if retrieval_index:
-        return RetrievalLLM(retrieval_index, base=base, facts=facts)
-    return base
+    backend: LLMBackend = RetrievalLLM(retrieval_index, base=base, facts=facts) if retrieval_index else base
+
+    # 지역 import로 순환참조 회피(decorators 는 llm.LLMBackend 를 import 한다).
+    from .decorators import CachingLLM, ObservableLLM, RetryingLLM
+
+    if cache:
+        backend = CachingLLM(backend)
+    if retries:
+        backend = RetryingLLM(backend, max_retries=retries)
+    if observe:
+        backend = ObservableLLM(backend)  # 가장 바깥 — 에이전트가 실제 부르는 전 호출을 계측
+    return backend

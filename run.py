@@ -76,6 +76,12 @@ def main() -> None:
     frames = agent.run()
     print_timeline(frames)
 
+    # AgentOps 이음새: 관측 데코레이터가 붙어 있으면 호출 계측 요약을 출력한다.
+    if hasattr(agent.llm, "summary"):
+        s = agent.llm.summary()
+        print(f"관측(Observability): LLM 호출 {s['calls']}건 "
+              f"(성공 {s['ok']} · 실패 {s['failed']}) · 총 {s['total_ms']}ms")
+
     if args.json:
         Path(args.json).write_text(json.dumps(frames, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\n프레임 저장: {args.json}")
