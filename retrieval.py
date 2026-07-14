@@ -14,6 +14,7 @@ from __future__ import annotations
 """
 
 import re
+from abc import ABC, abstractmethod
 from datetime import date, timedelta
 from typing import Any
 
@@ -94,28 +95,54 @@ def chunk_decision(raw: str, *, meta: dict[str, Any]) -> list[Chunk]:
     return chunks
 
 
-# ---- 벡터 스토어: 메타 필터 + 유사도 -----------------------------------------
+# ---- 유사도 점수: 전략(Strategy) 패턴 -----------------------------------------
+# 점수 계산 '방식'을 갈아끼우는 축. 지금은 어휘 겹침(LexicalScorer)이지만, 진짜
+# 임베딩을 넣을 때는 EmbeddingScorer 를 새로 구현해 VectorStore(scorer=...)로 주입만
+# 하면 된다 — VectorStore 와 검색 호출부(agent/llm)는 한 줄도 바뀌지 않는다.
 
-_TOKEN = re.compile(r"[가-힣A-Za-z0-9]+")
+
+class ScorerStrategy(ABC):
+    """질의–청크 유사도 점수 전략의 인터페이스(Strategy 역할)."""
+
+    @abstractmethod
+    def score(self, query: str, chunk: Chunk) -> float:
+        ...
 
 
-class VectorStore:
-    """색인된 청크 위에서 hybrid 검색을 수행한다 (메타 필터 + 유사도)."""
+class LexicalScorer(ScorerStrategy):
+    """어휘 겹침(Jaccard)으로 임베딩을 근사하는 기본 전략. 외부 의존성 0.
 
-    def __init__(self, chunks: list[Chunk]) -> None:
-        self.chunks = chunks
+    NOTE: 진짜 임베딩으로 바꾸려면 score()를 cosine(embed(query),
+          embed(chunk.search_text)) 로 계산하는 EmbeddingScorer 를 새로 만들어
+          VectorStore(scorer=EmbeddingScorer(...)) 로 주입하면 된다.
+    """
 
-    @staticmethod
-    def _tokens(s: str) -> set[str]:
-        return {t for t in _TOKEN.findall(s) if len(t) >= 2}
+    _TOKEN = re.compile(r"[가-힣A-Za-z0-9]+")
 
-    def _score(self, query: str, chunk: Chunk) -> float:
-        # NOTE: 어휘 겹침으로 임베딩을 '근사'한 자리. 실제로는 아래 한 줄을
-        #       cosine(embed(query), embed(chunk.search_text)) 로 교체하면 된다.
+    @classmethod
+    def _tokens(cls, s: str) -> set[str]:
+        return {t for t in cls._TOKEN.findall(s) if len(t) >= 2}
+
+    def score(self, query: str, chunk: Chunk) -> float:
         q, d = self._tokens(query), self._tokens(chunk.search_text)
         if not q or not d:
             return 0.0
         return len(q & d) / len(q | d)   # Jaccard (코사인 대용)
+
+
+# ---- 벡터 스토어: 메타 필터 + 유사도(전략 주입) -------------------------------
+
+
+class VectorStore:
+    """색인된 청크 위에서 hybrid 검색을 수행한다 (메타 필터 + 유사도).
+
+    점수 계산은 ScorerStrategy 에 위임한다(기본 LexicalScorer). 필터·정렬 로직은
+    점수 방식과 무관하게 고정이라, 임베딩 도입 시 이 클래스는 손대지 않는다.
+    """
+
+    def __init__(self, chunks: list[Chunk], scorer: ScorerStrategy | None = None) -> None:
+        self.chunks = chunks
+        self.scorer = scorer or LexicalScorer()
 
     def search(
         self,
@@ -137,7 +164,7 @@ class VectorStore:
             pool = [c for c in pool if c.source_type == source_type]
         if filters:
             pool = [c for c in pool if all(c.metadata.get(kk) == vv for kk, vv in filters.items())]
-        scored = [(self._score(query, c), c) for c in pool]
+        scored = [(self.scorer.score(query, c), c) for c in pool]
         scored.sort(key=lambda sc: sc[0], reverse=True)
         return scored[:k]
 

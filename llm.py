@@ -18,6 +18,7 @@ agent.py 수정 없이 이 파일 안에서만 일어납니다.
 
 import json
 import re
+from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
 from typing import Any, TypeVar
@@ -29,11 +30,16 @@ T = TypeVar("T", bound=BaseModel)
 FIXTURES_PATH = Path(__file__).with_name("fixtures.json")
 
 
-class LLMBackend:
-    """구조화 출력 백엔드의 공통 인터페이스."""
+class LLMBackend(ABC):
+    """구조화 출력 백엔드의 공통 인터페이스 — 전략(Strategy) 패턴의 Strategy 역할.
 
+    오케스트레이터(agent.py)는 이 인터페이스에만 의존하고, 실제 구현이 더미(MockLLM)인지
+    실제 LLM(ProxyLLM)인지 모른다. 그래서 두 전략을 런타임에 바꿔 끼울 수 있다.
+    """
+
+    @abstractmethod
     def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
-        raise NotImplementedError
+        ...
 
 
 class MockLLM(LLMBackend):
@@ -290,10 +296,14 @@ class RetrievalLLM(LLMBackend):
 
 
 def get_backend(use_llm: bool = False, retrieval_index: str | Path | None = None, *, facts: str = "") -> LLMBackend:
-    """기본은 MockLLM(오프라인). use_llm=True면 프록시 LLM을 시도합니다.
+    """LLM 전략을 골라 조립하는 팩토리 메서드(Factory Method).
 
-    retrieval_index를 주면 그 위에 RetrievalLLM을 덧씌워 #3(유사사례)만 실검색으로
-    바꿉니다. #1/#2/#4는 base(use_llm에 따라 Mock/Proxy)가 그대로 담당합니다.
+    호출부는 "어떤 전략이 필요한지"(use_llm/retrieval_index)만 말하고, 어떤 구체 클래스를
+    어떻게 생성·조합하는지는 이 함수가 캡슐화한다. 기본은 MockLLM(오프라인),
+    use_llm=True면 ProxyLLM(실제 LLM)을 시도한다.
+
+    retrieval_index를 주면 그 위에 RetrievalLLM(데코레이터)을 덧씌워 #0/#3만 실검색으로
+    바꾼다. #1/#2/#4/#5는 base(use_llm에 따라 Mock/Proxy)가 그대로 담당한다.
     """
 
     base: LLMBackend = ProxyLLM() if use_llm else MockLLM()
