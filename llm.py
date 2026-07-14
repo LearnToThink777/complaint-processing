@@ -17,13 +17,14 @@ agent.py 수정 없이 이 파일 안에서만 일어납니다.
 """
 
 import json
-import re
 from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
+
+from .tasks import task_registry
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -45,92 +46,17 @@ class LLMBackend(ABC):
 class MockLLM(LLMBackend):
     """fixtures.json 기반 더미 백엔드. 실제 LLM 없이 콘솔과 동일한 결과를 만듭니다.
 
-    task 문자열로 fixtures의 어떤 답을 꺼낼지 라우팅합니다:
-      - "verdict"       : context["item_no"] 로 verdict[str(n)] 조회
-      - "disclosure"    : context["item_no"] + verdict/checklist 로 이중 공개 조립
-      - "similar_cases" : similar_cases 그대로
-      - "renegotiation" : renegotiation 그대로
-    실제 LLM이라면 context(사건 사실·판정)를 읽고 생성할 값들입니다.
+    task별 payload 조립 로직은 이 클래스가 아니라 tasks.py의 TaskSpec.build_mock 이
+    소유한다(커맨드 패턴). MockLLM은 task 이름으로 레지스트리를 조회해 그 빌더를
+    호출하고, 결과를 스키마로 검증할 뿐이다.
     """
 
     def __init__(self, fixtures_path: Path = FIXTURES_PATH) -> None:
         self._fx = json.loads(fixtures_path.read_text(encoding="utf-8"))
 
-    def _checklist_meta(self, n: int) -> dict[str, Any]:
-        for c in self._fx["checklist"]:
-            if c["n"] == n:
-                return c
-        raise KeyError(f"checklist #{n} 없음")
-
     def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
-        payload: dict[str, Any]
-
-        if task == "verdict":
-            n = context["item_no"]
-            payload = dict(self._fx["verdict"][str(n)])
-
-        elif task == "disclosure":
-            n = context["item_no"]
-            d = self._fx["disclosure"][str(n)]
-            remaining = context.get("remaining", 0)
-            payload = {
-                "complainant_title": f"진행 안내 #{n} · 민원인용 / Complainant",
-                "complainant_body": d["complainant_body"],
-                "supervisor_title": f"검토 결과 #{n} · 회사·감독원용 / Supervisor",
-                # 남은 검토 건수는 오케스트레이터가 세어서 넘겨준 값을 반영(=콘솔과 동일 문구).
-                "supervisor_body": f"{d['supervisor_body']} 남은 검토 {remaining}건 · 전체 근거 원장 반영.",
-            }
-
-        elif task == "similar_cases":
-            payload = dict(self._fx["similar_cases"])
-
-        elif task == "renegotiation":
-            payload = dict(self._fx["renegotiation"])
-
-        elif task == "closing_disclosure":
-            # 종결 문구는 미리 정해둘 수 없다 — 실제 원장(ledger)의 판정을 읽고 나서야
-            # '무슨 문제가 확인됐고 배상비율이 얼마인지' 알 수 있다.
-            ledger = context.get("ledger", [])
-            issues = [l for l in ledger if l["verdict"] in ("위반", "미이행", "하자", "해당")]
-            award = next((l for l in ledger if l["verdict"] == "산정"), None)
-            detail = award["detail"] if award else "배상비율 산정 결과 없음"
-            found = bool(issues)
-            payload = {
-                "complainant_title": "처리 결과 안내 / To complainant",
-                "complainant_body": (
-                    f"검토 결과 {'문제가 확인되어 배상이 산정되었습니다' if found else '문제가 확인되지 않았습니다'}"
-                    f"({detail}). 이후 절차와 제출 서류를 쉽게 안내드릴게요."
-                ),
-                "supervisor_title": "사건 종결 리포트 / To supervisor",
-                "supervisor_body": f"{len(ledger)}개 항목 전부 ② 원장 반영. {detail}. 처리 이력 로그 종료.",
-            }
-
-        elif task == "checklist_plan":
-            # 사건 사실을 읽고 분류 + 검토 항목 자체를 도출. 더미는 실제 검색 없이
-            # fixtures의 데모 항목을 '이 사건에서 도출한 것처럼' 그대로 되돌린다
-            # (실제로 사실을 읽어 코퍼스를 검색하는 버전은 RetrievalLLM).
-            items = self._fx["checklist"]
-            payload = {
-                "classification": f"{self._fx['case']['product']} 의심",
-                "items": [{"item": c["item"], "law": c["law"], "source": c["law"]} for c in items],
-                "reasoning": "사건 사실에서 쟁점 키워드를 추출해 유형을 분류하고 관련 법령·절차 항목을 구성했습니다.",
-            }
-
-        elif task == "chunk_label":
-            # 색인용 일상어 라벨. 실제 LLM이라면 청크를 읽고 생성할 값을,
-            # 더미는 텍스트에서 순진하게 파생시킨다(요지=첫 구절, 키워드=명사 후보).
-            text = context.get("text", "")
-            head = re.split(r"[。.\n]", text.strip(), maxsplit=1)[0][:40]
-            kws = list(dict.fromkeys(re.findall(r"[가-힣]{2,}", text)))[:5]
-            payload = {
-                "issue_summary": head,
-                "keywords": kws,
-                "everyday_questions": [f"{k} 관련해서 문제가 있어요" for k in kws[:3]],
-            }
-
-        else:
-            raise ValueError(f"알 수 없는 task: {task}")
-
+        spec = task_registry().get(task)          # 미등록 task면 ValueError
+        payload = spec.build_mock(context, self._fx)
         # 실제 LLM 구조화 출력과 똑같이 '스키마 검증'을 거쳐 반환 → 더미도 타입 안전.
         return schema.model_validate(payload)
 
@@ -165,39 +91,11 @@ class ProxyLLM(LLMBackend):
         self._chat_model = chat_model
 
     def _system_prompt(self, task: str, context: dict[str, Any]) -> str:
-        base = (
-            "너는 금융 민원 처리 에이전트다. 사건 사실관계와 적용 법률에 근거해서만 판단하고, "
-            "사실을 지어내지 않는다. 애매하면 단정하지 않는다."
-        )
-        guides = {
-            "checklist_plan": (
-                "방금 이관받은 사건이다. 사건 유형 분류와 검토 항목 목록 둘 다 아직 정해지지 않았다 — "
-                "사건 사실을 읽고 사건 유형을 분류하고(classification), 어떤 법령·절차 위반 여부를 "
-                "검토해야 하는지 스스로 도출하라. 각 항목의 근거 법령·절차도 함께 밝혀라. "
-                "사실에 없는 근거를 지어내지 않는다."
-            ),
-            "verdict": "주어진 검토 항목 1건을 사건 사실에 대조해 규정 판정을 내려라.",
-            "disclosure": (
-                "같은 판정을 두 독자에게 나눠 써라. 민원인용은 법률 용어 없이 쉽고 공감적으로, "
-                "회사·감독원용은 법조문·판정·근거를 포함해 기술적으로. 사실은 동일하게 유지한다."
-            ),
-            "similar_cases": "유사 과거 분쟁 사례를 근거로 예상 완료일을 추정하고 처리 기한 초과 위험을 판정하라.",
-            "renegotiation": (
-                "기한 재협상 '재료'만 초안한다. 너는 자문·중재자이며 새 기한을 확정하지 않는다. "
-                "결정은 사람(민원인·감독원)이 한다."
-            ),
-            "closing_disclosure": (
-                "사건이 종결됐다. 미리 정해둔 결과를 말하지 말고, 주어진 원장(ledger)의 실제 판정들을 "
-                "읽어 무슨 문제가 확인됐는지와 배상비율을 반영해 종결 안내를 작성하라. "
-                "민원인용은 쉽고 공감적으로, 감독원용은 기술적으로."
-            ),
-            "chunk_label": (
-                "색인 대상 텍스트 조각(법령 조문 또는 분쟁조정 결정문 섹션)을 읽고, 검색이 잘 되도록 "
-                "쟁점 한 줄 요약·키워드·'일상어 질문'을 생성하라. 일상어 질문은 법률어를 모르는 "
-                "민원인이 실제로 던질 법한 문장이어야 한다(예: '원금 다 잃었어요', '설명 못 들었어요')."
-            ),
-        }
-        return f"{base}\n{guides.get(task, '')}\n[컨텍스트]\n{json.dumps(context, ensure_ascii=False, indent=2)}"
+        # task별 지시문은 이 클래스가 아니라 tasks.py의 TaskSpec.guide 가 소유한다(커맨드).
+        reg = task_registry()
+        base = reg.base_guide
+        guide = reg.get(task).guide if task in reg else ""
+        return f"{base}\n{guide}\n[컨텍스트]\n{json.dumps(context, ensure_ascii=False, indent=2)}"
 
     def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
         model = self._chat_model().with_structured_output(schema, method="function_calling")
