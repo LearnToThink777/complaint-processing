@@ -24,18 +24,10 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE.parent) not in sys.path:
     sys.path.insert(0, str(_HERE.parent))
 
-from complaint_processing.agent import ComplaintAgent
-from complaint_processing.llm import get_backend
+from complaint_processing.facade import run_complaint_case
 from complaint_processing.schemas import ComplaintCase
 
 FIXTURES = json.loads((Path(__file__).with_name("fixtures.json")).read_text(encoding="utf-8"))
-
-
-def build_agent(use_llm: bool, retrieval_index: str | None = None) -> ComplaintAgent:
-    case = ComplaintCase.model_validate(FIXTURES["case"])
-    # 검토 항목은 여기서 만들지 않는다 — 이관 시 LLM #0(plan_checklist)이 사건 사실만 보고 도출한다.
-    backend = get_backend(use_llm=use_llm, retrieval_index=retrieval_index, facts=case.facts)
-    return ComplaintAgent(case, llm=backend)
 
 
 def print_timeline(frames: list[dict]) -> None:
@@ -66,19 +58,20 @@ def main() -> None:
         p = Path(args.retrieval)
         index = str(p if p.is_absolute() else Path(__file__).with_name(args.retrieval))
 
-    agent = build_agent(use_llm=args.llm, retrieval_index=index)
-    backend = type(agent.llm).__name__
+    # 퍼사드(Facade): 케이스 로드 → 백엔드 조립 → 실행을 한 함수 뒤로 숨긴다.
+    case = ComplaintCase.model_validate(FIXTURES["case"])
+    frames, backend = run_complaint_case(case, use_llm=args.llm, retrieval_index=index)
+
     src = "실제 LLM" if args.llm else "더미 JSON"
     if index:
         src += " + 실검색(RetrievalLLM)"
-    print(f"백엔드: {backend}  ({src})")
+    print(f"백엔드: {type(backend).__name__}  ({src})")
 
-    frames = agent.run()
     print_timeline(frames)
 
     # AgentOps 이음새: 관측 데코레이터가 붙어 있으면 호출 계측 요약을 출력한다.
-    if hasattr(agent.llm, "summary"):
-        s = agent.llm.summary()
+    if hasattr(backend, "summary"):
+        s = backend.summary()
         print(f"관측(Observability): LLM 호출 {s['calls']}건 "
               f"(성공 {s['ok']} · 실패 {s['failed']}) · 총 {s['total_ms']}ms")
 

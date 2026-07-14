@@ -15,10 +15,10 @@ emit()가 쌓는 frames는 콘솔의 프레임 스키마와 호환되므로,
 이 결과 JSON을 그대로 HTML 렌더러에 먹일 수 있습니다.
 """
 
-import copy
 from typing import Any
 
 from .llm import LLMBackend, get_backend
+from .presentation import FramePresenter
 from .schemas import (
     ChecklistPlan,
     ComplaintCase,
@@ -30,7 +30,12 @@ from .schemas import (
 
 
 class ComplaintAgent:
-    def __init__(self, case: ComplaintCase, llm: LLMBackend | None = None) -> None:
+    def __init__(
+        self,
+        case: ComplaintCase,
+        llm: LLMBackend | None = None,
+        observers: list | None = None,
+    ) -> None:
         self.case = case
         self.llm = llm or get_backend(use_llm=False)
         # 상태 — 콘솔의 s 객체와 동일한 필드 구성
@@ -47,7 +52,15 @@ class ComplaintAgent:
         self.nego_state = "none"
         self.risk = False
         self.due_date: str | None = None
-        self.frames: list[dict[str, Any]] = []
+        # 옵서버(Observer): 상태 변화(emit)를 통지받는 대상들. 기본은 프레임 프레젠터 1개.
+        # 프레임 조립(뷰 포맷)은 여기서 하지 않고 프레젠터가 담당한다.
+        self._presenter = FramePresenter()
+        self._observers: list = [self._presenter, *(observers or [])]
+
+    @property
+    def frames(self) -> list[dict[str, Any]]:
+        """수집된 프레임 = 프레임 프레젠터가 모아 둔 것."""
+        return self._presenter.frames
 
     # ---- 결정론적 헬퍼 (LLM 아님) -------------------------------------------
 
@@ -55,30 +68,9 @@ class ComplaintAgent:
         self.history.append({"tag": tag, "ko": ko, "link": link, "step": len(self.frames)})
 
     def emit(self, phase: tuple[str, str], hop_label: str) -> None:
-        """현재 상태를 프레임으로 스냅샷. 콘솔 frames[] 한 칸에 대응."""
-        self.frames.append(
-            copy.deepcopy(
-                {
-                    "case_id": self.case.case_id,
-                    "product": self.case.product,
-                    "classification": self.classification,
-                    "status": self.status[0],
-                    "status_en": self.status[1],
-                    "due_date": self.due_date,
-                    "checklist": self.checklist,
-                    "ledger": self.ledger,
-                    "history": self.history,
-                    "disclose_u": self.discloseU,
-                    "disclose_r": self.discloseR,
-                    "vector": self.vector,
-                    "nego_state": self.nego_state,
-                    "risk": self.risk,
-                    "phase_ko": phase[0],
-                    "phase_en": phase[1],
-                    "hop": hop_label,
-                }
-            )
-        )
+        """상태 변화를 옵서버들에게 통지 — 각 옵서버가 스냅샷을 처리한다."""
+        for obs in self._observers:
+            obs.capture(self, phase, hop_label)
 
     def _remaining(self) -> int:
         return sum(1 for c in self.checklist if not c["done"])
