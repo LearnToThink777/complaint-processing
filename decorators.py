@@ -20,6 +20,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from .critic import CriticResult, SemanticVerifier, verify
 from .llm import LLMBackend
 
 T = TypeVar("T", bound=BaseModel)
@@ -107,3 +108,72 @@ class CachingLLM(LLMDecorator):
         if key not in self._cache:
             self._cache[key] = self._wrapped.structured(task, schema, context)
         return self._cache[key]
+
+
+class CriticBlocked(Exception):
+    """출력 검증이 BLOCK 판정을 냈을 때(enforce=True) 발생. 산출물이 사용자에게 가기 전에 막는다."""
+
+    def __init__(self, task: str, result: CriticResult) -> None:
+        self.task = task
+        self.result = result
+        reasons = "; ".join(c.reason for c in result.hard_fails)
+        super().__init__(f"[{task}] 출력 검증 BLOCK — {reasons}")
+
+
+class CriticLLM(LLMDecorator):
+    """작업 백엔드 출력을 독립 검증하는 데코레이터(critic.py 라우터를 호출).
+
+    작업 agent가 낸 결과(payload)를, 그 추론(CoT)이 아니라 결과물만 놓고 입력(context)에
+    대조한다. context에 근거(law/facts)가 없는 task(예: disclosure)는 건너뛴다.
+    enforce=False면 판정을 기록만 하고 통과(보고 전용), True면 BLOCK 시 CriticBlocked를 던진다.
+    """
+
+    def __init__(
+        self,
+        wrapped: LLMBackend,
+        *,
+        enforce: bool = False,
+        semantic: SemanticVerifier | None = None,
+    ) -> None:
+        super().__init__(wrapped)
+        self.enforce = enforce
+        self.semantic = semantic
+        self.reviews: list[tuple[str, CriticResult]] = []
+
+    def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
+        result = self._wrapped.structured(task, schema, context)
+        review = self._review(result, context)
+        if review is not None:
+            self.reviews.append((task, review))
+            if self.enforce and review.verdict == "BLOCK":
+                raise CriticBlocked(task, review)
+        return result
+
+    def _review(self, result: BaseModel, context: dict[str, Any]) -> CriticResult | None:
+        law, facts = context.get("law"), context.get("facts")
+        if law is None and facts is None:
+            return None  # 검증할 근거가 context에 없음 → 건너뜀
+        # 검증 대상 텍스트: 판정이면 code+detail, 이중공개면 감독원용 본문.
+        if hasattr(result, "detail"):
+            text = f"{getattr(result, 'code', '')} {result.detail}".strip()
+        elif hasattr(result, "supervisor_body"):
+            text = str(result.supervisor_body)
+        else:
+            return None
+        return verify(text, law=law, facts=facts, semantic=self.semantic) if text else None
+
+    def summary(self) -> dict[str, Any]:
+        from collections import Counter
+
+        c = Counter(r.verdict for _, r in self.reviews)
+        return {"reviewed": len(self.reviews), "PASS": c["PASS"], "ESCALATE": c["ESCALATE"], "BLOCK": c["BLOCK"]}
+
+
+def unwrap(backend: LLMBackend, cls: type) -> Any:
+    """데코레이터 체인을 따라가며 cls 타입의 인스턴스를 찾는다(없으면 None)."""
+    cur: Any = backend
+    while cur is not None:
+        if isinstance(cur, cls):
+            return cur
+        cur = getattr(cur, "_wrapped", None)
+    return None

@@ -201,6 +201,9 @@ def get_backend(
     observe: bool = True,
     retries: int = 0,
     cache: bool = False,
+    critic: bool = False,
+    critic_enforce: bool = False,
+    today: date | None = None,
 ) -> LLMBackend:
     """LLM 전략을 골라 데코레이터까지 조립하는 팩토리 메서드(Factory Method).
 
@@ -214,14 +217,21 @@ def get_backend(
       - observe=True(기본): ObservableLLM 으로 호출별 소요시간·성공/실패 계측
       - retries>0        : RetryingLLM 으로 실패 재시도
       - cache=True       : CachingLLM 으로 동일 호출 결과 캐시
+      - critic=True      : CriticLLM 으로 출력을 근거(law/facts)에 대조(할루시네이션 검증)
+                           critic_enforce=True면 BLOCK 판정 시 CriticBlocked 예외로 산출 차단
+    today 를 주면 유사사례 예상 완료일 계산의 기준일을 고정한다(미지정 시 실제 date.today()).
     """
 
     base: LLMBackend = ProxyLLM() if use_llm else MockLLM()
-    backend: LLMBackend = RetrievalLLM(retrieval_index, base=base, facts=facts) if retrieval_index else base
+    backend: LLMBackend = (
+        RetrievalLLM(retrieval_index, base=base, facts=facts, today=today) if retrieval_index else base
+    )
 
     # 지역 import로 순환참조 회피(decorators 는 llm.LLMBackend 를 import 한다).
-    from .decorators import CachingLLM, ObservableLLM, RetryingLLM
+    from .decorators import CachingLLM, CriticLLM, ObservableLLM, RetryingLLM
 
+    if critic:
+        backend = CriticLLM(backend, enforce=critic_enforce)  # 출력을 근거에 대조(산출 직후)
     if cache:
         backend = CachingLLM(backend)
     if retries:

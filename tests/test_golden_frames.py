@@ -15,6 +15,7 @@ frames.json 은 `python run.py --retrieval corpus_index.json --json frames.json`
 
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -29,11 +30,15 @@ from complaint_processing.schemas import ComplaintCase
 
 
 def regenerate_frames() -> list:
-    """현재 코드로 프레임을 다시 만든다 (frames.json 을 만든 것과 동일한 설정)."""
+    """현재 코드로 프레임을 다시 만든다 (frames.json 을 만든 것과 동일한 설정).
+
+    today 를 2026-07-15 로 고정한다 — 유사사례 예상 완료일이 실제 시계(date.today())에
+    의존하면 날짜가 바뀔 때마다 골든이 깨지므로, 기준일을 못박아 재현성을 보장한다.
+    """
     fixtures = json.loads((_PKG / "fixtures.json").read_text(encoding="utf-8"))
     case = ComplaintCase.model_validate(fixtures["case"])
     index = str((_PKG / "corpus_index.json").resolve())
-    backend = get_backend(use_llm=False, retrieval_index=index, facts=case.facts)
+    backend = get_backend(use_llm=False, retrieval_index=index, facts=case.facts, today=date(2026, 7, 15))
     return ComplaintAgent(case, llm=backend).run()
 
 

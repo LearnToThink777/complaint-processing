@@ -51,6 +51,7 @@ def main() -> None:
     ap.add_argument("--json", metavar="PATH", help="프레임을 JSON 파일로 저장")
     ap.add_argument("--retrieval", metavar="INDEX", nargs="?", const="corpus_index.json",
                     help="#3 유사사례를 실검색으로 (기본 색인: corpus_index.json). build_index.py 먼저 실행.")
+    ap.add_argument("--critic", action="store_true", help="출력 검증(Critic) 켜기 — 각 산출물을 근거에 대조")
     args = ap.parse_args()
 
     index = None
@@ -60,7 +61,7 @@ def main() -> None:
 
     # 퍼사드(Facade): 케이스 로드 → 백엔드 조립 → 실행을 한 함수 뒤로 숨긴다.
     case = ComplaintCase.model_validate(FIXTURES["case"])
-    frames, backend = run_complaint_case(case, use_llm=args.llm, retrieval_index=index)
+    frames, backend = run_complaint_case(case, use_llm=args.llm, retrieval_index=index, critic=args.critic)
 
     src = "실제 LLM" if args.llm else "더미 JSON"
     if index:
@@ -69,11 +70,19 @@ def main() -> None:
 
     print_timeline(frames)
 
-    # AgentOps 이음새: 관측 데코레이터가 붙어 있으면 호출 계측 요약을 출력한다.
+    # 관측 데코레이터가 붙어 있으면 호출 계측 요약을 출력한다.
     if hasattr(backend, "summary"):
         s = backend.summary()
         print(f"관측(Observability): LLM 호출 {s['calls']}건 "
               f"(성공 {s['ok']} · 실패 {s['failed']}) · 총 {s['total_ms']}ms")
+
+    # 출력 검증(Critic)이 켜져 있으면 검증 요약을 출력한다.
+    from complaint_processing.decorators import CriticLLM, unwrap
+    critic = unwrap(backend, CriticLLM)
+    if critic is not None:
+        c = critic.summary()
+        print(f"출력 검증(Critic): 검증 {c['reviewed']}건 "
+              f"(PASS {c['PASS']} · ESCALATE {c['ESCALATE']} · BLOCK {c['BLOCK']})")
 
     if args.json:
         Path(args.json).write_text(json.dumps(frames, ensure_ascii=False, indent=2), encoding="utf-8")
