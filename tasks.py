@@ -146,7 +146,9 @@ _ALL_SPECS: list[TaskSpec] = [
         "renegotiation",
         (
             "기한 재협상 '재료'만 초안한다. 너는 자문·중재자이며 새 기한을 확정하지 않는다. "
-            "결정은 사람(민원인·감독원)이 한다."
+            "결정은 사람(민원인·감독원)이 한다. context의 similar_cases(유사사례별 소요 영업일)와 "
+            "estimated_completion(그 사례들로 추정한 완료일)을 근거로 삼아 evidence_for_supervisor와 "
+            "recommended_new_due_date를 작성하라. 근거에 없는 수치를 지어내지 않는다."
         ),
         _mock_renegotiation,
     ),

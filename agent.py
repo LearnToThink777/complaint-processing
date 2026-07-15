@@ -127,12 +127,30 @@ class ComplaintAgent:
             {"ledger": self.ledger, "checklist": self.checklist},
         )
 
-    def draft_renegotiation(self) -> RenegotiationDraft:
-        """[LLM #4] 재협상 재료 초안 — 결정은 사람이, 에이전트는 자문만."""
+    def draft_renegotiation(self, sim: SimilarCasesResult) -> RenegotiationDraft:
+        """[LLM #4] 재협상 재료 초안 — 결정은 사람이, 에이전트는 자문만.
+
+        #3(retrieve_similar_cases)이 찾은 유사사례·예상완료일을 그대로 넘긴다.
+        evidence_for_supervisor가 "유사사례 근거"를 요구하는데(schemas.py), 정작
+        유사사례 데이터를 안 주면 LLM이 근거를 지어낼 수밖에 없다 — 그래서 넘긴다.
+        같은 값을 facts로도 넘겨야 CriticLLM이 evidence_for_supervisor의 인용을
+        이 유사사례 숫자에 대조해 검증한다(없으면 law/facts 둘 다 없어 검증이 건너뛰어짐).
+        """
+        similar_cases = [c.model_dump() for c in sim.cases]
         return self.llm.structured(
             "renegotiation",
             RenegotiationDraft,
-            {"blocking": [c["item"] for c in self.checklist if not c["done"]], "due_date": self.due_date},
+            {
+                "blocking": [c["item"] for c in self.checklist if not c["done"]],
+                "due_date": self.due_date,
+                "similar_cases": similar_cases,
+                "estimated_completion": sim.estimated_completion,
+                "facts": {
+                    "due_date": self.due_date,
+                    "estimated_completion": sim.estimated_completion,
+                    "similar_cases": similar_cases,
+                },
+            },
         )
 
     # ---- 처리 루프 한 항목: LLM 판정 → 원장 반영 → LLM 이중 공개 --------------
@@ -192,7 +210,7 @@ class ComplaintAgent:
 
         # 4) 재협상 (LLM #4) — 에이전트는 재료만, 사람이 결정
         if sim.over_deadline_risk:
-            nego = self.draft_renegotiation()
+            nego = self.draft_renegotiation(sim)
             self.nego_state = "active"
             self.status = ("협상 중", "Renegotiating")
             self.discloseU = {"title": "처리 지연 안내 / To complainant", "body": nego.reason_for_complainant}

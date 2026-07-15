@@ -153,11 +153,14 @@ class CriticLLM(LLMDecorator):
         law, facts = context.get("law"), context.get("facts")
         if law is None and facts is None:
             return None  # 검증할 근거가 context에 없음 → 건너뜀
-        # 검증 대상 텍스트: 판정이면 code+detail, 이중공개면 감독원용 본문.
+        # 검증 대상 텍스트: 판정이면 code+detail, 이중공개면 감독원용 본문,
+        # 재협상 초안이면 감독원용 근거(유사사례 인용이 실제 근거와 맞는지가 관건).
         if hasattr(result, "detail"):
             text = f"{getattr(result, 'code', '')} {result.detail}".strip()
         elif hasattr(result, "supervisor_body"):
             text = str(result.supervisor_body)
+        elif hasattr(result, "evidence_for_supervisor"):
+            text = str(result.evidence_for_supervisor)
         else:
             return None
         return verify(text, law=law, facts=facts, semantic=self.semantic) if text else None
