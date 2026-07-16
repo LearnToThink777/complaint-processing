@@ -13,10 +13,11 @@ from __future__ import annotations
 실제로는 _score()를 임베딩 코사인 유사도로 갈아끼우면 되고, 그 자리에 주석을 달아뒀습니다.
 """
 
+import math
 import re
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
@@ -128,6 +129,90 @@ class LexicalScorer(ScorerStrategy):
         if not q or not d:
             return 0.0
         return len(q & d) / len(q | d)   # Jaccard (코사인 대용)
+
+
+# ---- 임베딩 호출: 교체 가능한 '함수' (튜닝 지점) -------------------------------
+# 임베딩 호출을 함수로 빼두는 이유는 프롬프트를 build_prompt 함수로 뺀 것과 같다:
+# 모델·차원·정규화 방식을 상황에 따라 바꿔가며 튜닝하려면, 호출 지점이 한 함수여야
+# 한다. EmbeddingScorer 는 이 함수에만 의존하고 '무엇으로' 임베딩하는지는 모른다.
+
+# (texts, is_query) -> 각 text의 임베딩 벡터. is_query 로 질의/문서를 구분해
+# task_type(RETRIEVAL_QUERY / RETRIEVAL_DOCUMENT)을 달리 준다(비대칭 검색 최적화).
+EmbedFn = Callable[[list[str], bool], list[list[float]]]
+
+
+def default_gemini_embed_fn(
+    model: str = "models/gemini-embedding-001",
+    *,
+    dimensions: int | None = None,
+) -> EmbedFn:
+    """Gemini 임베딩(무료 티어)을 쓰는 기본 EmbedFn 을 만든다.
+
+    LLM과 같은 GEMINI_API_KEY 하나를 쓴다(별도 키 불필요). model·dimensions 를 바꾸면
+    다른 임베딩으로 튜닝된다. 완전히 다른 제공자로 갈아끼우려면 이 함수 대신 같은
+    시그니처(EmbedFn)의 함수를 만들어 EmbeddingScorer 에 주입하면 된다.
+    """
+    from .llm import _load_gemini_api_key
+
+    api_key = _load_gemini_api_key()
+    try:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "langchain-google-genai 가 설치돼 있지 않습니다. pip install -r requirements.txt 하세요."
+        ) from exc
+    kwargs: dict[str, Any] = {"model": model, "google_api_key": api_key}
+    if dimensions is not None:
+        kwargs["output_dimensionality"] = dimensions
+    client = GoogleGenerativeAIEmbeddings(**kwargs)
+
+    def embed(texts: list[str], is_query: bool) -> list[list[float]]:
+        # langchain 이 질의/문서에 맞는 task_type 을 자동 지정한다
+        # (embed_query→RETRIEVAL_QUERY, embed_documents→RETRIEVAL_DOCUMENT).
+        if is_query:
+            return [client.embed_query(t) for t in texts]
+        return client.embed_documents(texts)
+
+    return embed
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    """두 벡터의 코사인 유사도. 표준 라이브러리만 사용(외부 의존성 0)."""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+class EmbeddingScorer(ScorerStrategy):
+    """임베딩 코사인 유사도로 점수를 내는 전략(LexicalScorer 대체).
+
+    NOTE 주석이 예고한 그대로의 교체 지점이다: VectorStore(scorer=EmbeddingScorer())
+    로 주입하면 VectorStore·검색 호출부는 한 줄도 바뀌지 않는다.
+
+    ScorerStrategy.score(query, chunk) 는 청크마다 호출되므로, 같은 텍스트를 반복
+    임베딩하지 않도록 결과를 캐시한다(질의는 질의끼리, 문서는 chunk_id 로). 임베딩
+    '방법'은 EmbedFn 함수에 위임하므로, 이 클래스는 무슨 모델을 쓰는지 모른다.
+    """
+
+    def __init__(self, embed_fn: EmbedFn | None = None) -> None:
+        self._embed_fn = embed_fn
+        self._qcache: dict[str, list[float]] = {}
+        self._dcache: dict[str, list[float]] = {}
+
+    @property
+    def embed_fn(self) -> EmbedFn:
+        # 지연 생성: 실제 검색이 일어날 때만 임베딩 클라이언트를 만든다(키 없으면 그때 실패).
+        if self._embed_fn is None:
+            self._embed_fn = default_gemini_embed_fn()
+        return self._embed_fn
+
+    def score(self, query: str, chunk: Chunk) -> float:
+        if query not in self._qcache:
+            self._qcache[query] = self.embed_fn([query], True)[0]
+        if chunk.chunk_id not in self._dcache:
+            self._dcache[chunk.chunk_id] = self.embed_fn([chunk.search_text], False)[0]
+        return cosine(self._qcache[query], self._dcache[chunk.chunk_id])
 
 
 # ---- 벡터 스토어: 메타 필터 + 유사도(전략 주입) -------------------------------
