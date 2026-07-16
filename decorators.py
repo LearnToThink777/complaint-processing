@@ -79,7 +79,22 @@ class ObservableLLM(LLMDecorator):
 
 
 class RetryingLLM(LLMDecorator):
-    """실패 시 최대 max_retries회 재시도(신뢰성). max_retries=0이면 무동작."""
+    """실패 시 최대 max_retries회 재시도(신뢰성). max_retries=0이면 무동작.
+
+    재시도 대상은 '인프라 실패'(네트워크 타임아웃, 일시적 API 오류 등)뿐이다.
+    CriticBlocked(출력 품질 문제로 막힘)는 재시도하지 않고 즉시 전파한다 — 이유:
+      - MockLLM 이면 같은 context로 다시 불러도 결정론적이라 100% 똑같이 BLOCK된다
+        (재시도가 통계적으로도 무의미).
+      - ProxyLLM(실제 LLM) 이어도, 지금 구조는 '왜 막혔는지'(critic의 reason)를
+        다음 시도의 프롬프트/context에 전혀 넘기지 않는다. 그래서 재시도는 그냥
+        같은 입력으로 눈 감고 한 번 더 굴리는 것뿐이라 결과가 나아진다는 보장이 없다.
+
+    TODO(실제 LLM 도입 시 반드시 처리): CriticBlocked를 잡아 재시도하려면, review.hard_fails의
+    reason을 다음 시도의 context에 피드백으로 주입하는 경로를 새로 만들어야 한다
+    (예: context["critic_feedback"] = [c.reason for c in review.hard_fails] 를 넣고
+    ProxyLLM._system_prompt가 이를 프롬프트에 반영하도록). 그 경로가 생기기 전까지는
+    CriticBlocked를 여기서 재시도하지 않는다 — 개선 없는 재시도는 오히려 실패를 감춘다.
+    """
 
     def __init__(self, wrapped: LLMBackend, max_retries: int = 2) -> None:
         super().__init__(wrapped)
@@ -90,7 +105,9 @@ class RetryingLLM(LLMDecorator):
         for _ in range(self.max_retries + 1):
             try:
                 return self._wrapped.structured(task, schema, context)
-            except Exception as exc:  # noqa: BLE001
+            except CriticBlocked:
+                raise  # 품질 문제는 인프라 재시도 대상이 아님 — 즉시 전파(위 TODO 참고)
+            except Exception as exc:  # noqa: BLE001 — 네트워크/일시적 실패로 간주하고 재시도
                 last = exc
         assert last is not None
         raise last
