@@ -29,6 +29,42 @@ from .tasks import task_registry
 T = TypeVar("T", bound=BaseModel)
 
 FIXTURES_PATH = Path(__file__).with_name("fixtures.json")
+ENV_PATH = Path(__file__).with_name(".env")
+
+
+def build_system_prompt(task: str, context: dict[str, Any]) -> str:
+    """공통 지시문(base_guide) + task별 프롬프트(build_prompt(context))를 이어붙인다.
+
+    프롬프트 '내용'은 tasks.py의 각 build_prompt 함수가 소유한다(커맨드). 이 함수는
+    실제 LLM 백엔드(ProxyLLM·GeminiLLM)가 공유하는 조립 규칙일 뿐이다 — 백엔드가
+    바뀌어도 프롬프트는 동일하게 나온다.
+    """
+    reg = task_registry()
+    base = reg.base_guide
+    if task in reg:
+        body = reg.get(task).build_prompt(context)
+    else:  # 미등록 task 방어 — context를 통째로 덤프
+        body = f"[컨텍스트]\n{json.dumps(context, ensure_ascii=False, indent=2)}"
+    return f"{base}\n\n{body}"
+
+
+def _load_gemini_api_key() -> str:
+    """.env(있으면)를 읽어 GEMINI_API_KEY(또는 GOOGLE_API_KEY)를 돌려준다."""
+    import os
+
+    try:  # python-dotenv 가 있으면 .env 를 환경변수로 로드
+        from dotenv import load_dotenv
+
+        load_dotenv(ENV_PATH)
+    except ModuleNotFoundError:
+        pass  # 없으면 이미 환경변수에 있다고 가정
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError(
+            f".env 에 GEMINI_API_KEY 가 없습니다. Google AI Studio에서 발급받아 "
+            f"{ENV_PATH} 에 'GEMINI_API_KEY=...' 로 넣으세요."
+        )
+    return key
 
 
 class LLMBackend(ABC):
@@ -90,22 +126,57 @@ class ProxyLLM(LLMBackend):
 
         self._chat_model = chat_model
 
-    def _system_prompt(self, task: str, context: dict[str, Any]) -> str:
-        # task별 지시문은 이 클래스가 아니라 tasks.py의 TaskSpec.guide 가 소유한다(커맨드).
-        reg = task_registry()
-        base = reg.base_guide
-        guide = reg.get(task).guide if task in reg else ""
-        return f"{base}\n{guide}\n[컨텍스트]\n{json.dumps(context, ensure_ascii=False, indent=2)}"
-
     def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
         model = self._chat_model().with_structured_output(schema, method="function_calling")
         result = model.invoke(
             [
-                {"role": "system", "content": self._system_prompt(task, context)},
+                {"role": "system", "content": build_system_prompt(task, context)},
                 {"role": "user", "content": f"task={task} 에 대한 구조화 출력을 반환하라."},
             ]
         )
         # with_structured_output은 이미 schema 인스턴스를 주지만, dict로 올 경우까지 방어.
+        if isinstance(result, schema):
+            return result
+        if isinstance(result, dict):
+            return schema.model_validate(result)
+        raise RuntimeError(f"예상치 못한 LLM 응답 형태: {type(result)!r}")
+
+
+class GeminiLLM(LLMBackend):
+    """Google Gemini(무료 티어)를 쓰는 실제 LLM 백엔드.
+
+    ProxyLLM과 같은 관용구(with_structured_output(schema, method="function_calling"))를
+    쓰되, 백엔드가 fixed.llm 프록시가 아니라 langchain-google-genai의
+    ChatGoogleGenerativeAI 다. 프롬프트 조립은 build_system_prompt(→ tasks.py의
+    build_prompt)에 위임하므로, ProxyLLM 과 완전히 동일한 프롬프트가 나간다.
+
+    API 키는 .env 의 GEMINI_API_KEY 에서 읽는다(없으면 생성 시점에 실패). 무료 티어는
+    GPU·서버가 필요 없다 — 로컬은 HTTP 요청만 보내고 계산은 Google이 한다.
+    """
+
+    # gemini-flash-latest: 구글이 최신 무료 flash로 자동 연결하는 별칭. 특정 버전
+    # (gemini-2.5-flash 등)은 신규 계정에 막히거나 deprecate되므로 별칭이 가장 견고.
+    def __init__(self, model: str = "gemini-flash-latest", temperature: float = 0.0) -> None:
+        api_key = _load_gemini_api_key()
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "langchain-google-genai 가 설치돼 있지 않습니다. "
+                "pip install -r requirements.txt (또는 pip install langchain-google-genai) 하세요."
+            ) from exc
+        self.model_name = model
+        # temperature=0: 판정/작문의 재현성을 위해 기본은 결정론적으로.
+        self._llm = ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=api_key)
+
+    def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
+        model = self._llm.with_structured_output(schema, method="function_calling")
+        result = model.invoke(
+            [
+                {"role": "system", "content": build_system_prompt(task, context)},
+                {"role": "user", "content": f"task={task} 에 대한 구조화 출력을 반환하라."},
+            ]
+        )
         if isinstance(result, schema):
             return result
         if isinstance(result, dict):
@@ -197,6 +268,7 @@ def get_backend(
     use_llm: bool = False,
     retrieval_index: str | Path | None = None,
     *,
+    provider: str = "gemini",
     facts: str = "",
     observe: bool = True,
     retries: int = 0,
@@ -208,10 +280,13 @@ def get_backend(
     """LLM 전략을 골라 데코레이터까지 조립하는 팩토리 메서드(Factory Method).
 
     호출부는 "어떤 전략/기능이 필요한지"만 말하고, 어떤 구체 클래스를 어떻게 생성·조합할지는
-    이 함수가 캡슐화한다. 기본은 MockLLM(오프라인), use_llm=True면 ProxyLLM(실제 LLM).
+    이 함수가 캡슐화한다. 기본은 MockLLM(오프라인). use_llm=True면 실제 LLM을 쓰며,
+    어느 실제 백엔드를 쓸지는 provider로 고른다:
+      - provider="gemini"(기본): GeminiLLM — Google Gemini 무료 티어(.env의 GEMINI_API_KEY)
+      - provider="proxy"       : ProxyLLM — fixed.llm 프록시(chonnam-clone 저장소 필요)
 
     retrieval_index를 주면 그 위에 RetrievalLLM(데코레이터)을 덧씌워 #0/#3만 실검색으로
-    바꾼다. #1/#2/#4/#5는 base(Mock/Proxy)가 담당한다.
+    바꾼다. #1/#2/#4/#5는 base(Mock/실제LLM)가 담당한다.
 
     관측/재시도/캐시는 데코레이터로 겉을 감싼다(AgentOps 이음새) — 감싸도 출력은 동일하다:
       - observe=True(기본): ObservableLLM 으로 호출별 소요시간·성공/실패 계측
@@ -219,10 +294,15 @@ def get_backend(
       - cache=True       : CachingLLM 으로 동일 호출 결과 캐시
       - critic=True      : CriticLLM 으로 출력을 근거(law/facts)에 대조(할루시네이션 검증)
                            critic_enforce=True면 BLOCK 판정 시 CriticBlocked 예외로 산출 차단
+                           실제 LLM(gemini) 모드면 semantic 검증도 GeminiSemanticVerifier로
+                           올린다(어휘겹침 근사 대신 실제 함의 판정).
     today 를 주면 유사사례 예상 완료일 계산의 기준일을 고정한다(미지정 시 실제 date.today()).
     """
 
-    base: LLMBackend = ProxyLLM() if use_llm else MockLLM()
+    if use_llm:
+        base: LLMBackend = GeminiLLM() if provider == "gemini" else ProxyLLM()
+    else:
+        base = MockLLM()
     backend: LLMBackend = (
         RetrievalLLM(retrieval_index, base=base, facts=facts, today=today) if retrieval_index else base
     )
@@ -231,7 +311,13 @@ def get_backend(
     from .decorators import CachingLLM, CriticLLM, ObservableLLM, RetryingLLM
 
     if critic:
-        backend = CriticLLM(backend, enforce=critic_enforce)  # 출력을 근거에 대조(산출 직후)
+        # 실제 LLM(gemini) 모드면 Critic의 semantic 검증도 Gemini로. 그 외엔 기본(어휘겹침).
+        semantic = None
+        if use_llm and provider == "gemini":
+            from .critic import GeminiSemanticVerifier
+
+            semantic = GeminiSemanticVerifier()
+        backend = CriticLLM(backend, enforce=critic_enforce, semantic=semantic)  # 출력을 근거에 대조
     if cache:
         backend = CachingLLM(backend)
     if retries:

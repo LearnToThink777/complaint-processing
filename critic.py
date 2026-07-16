@@ -115,6 +115,63 @@ class LexicalEntailment:
         return True if overlap >= self.threshold else None
 
 
+class GeminiSemanticVerifier:
+    """실제 LLM(Gemini)로 함의(entailment)를 판정하는 semantic 검증 전략.
+
+    LexicalEntailment(어휘겹침 근사)를 대체한다. claim(작업 agent가 낸 규범 판단)이
+    grounding(사건 사실 등 근거)에 함의되는지 Gemini에게 묻는다:
+      - 근거로부터 확실히 뒷받침됨            → True(통과)
+      - 근거와 명백히 모순됨                  → False(확정 위반 → 사람 확인)
+      - 근거만으론 판단 불가/확신 없음        → None(에스컬레이트)
+
+    critic의 핵심 규칙(확신 없으면 단정하지 않는다)을 그대로 지키려고, 모델이
+    확신하지 못하면 None 으로 떨어뜨린다. 즉 애매함은 BLOCK이 아니라 ESCALATE 로 간다.
+    """
+
+    def __init__(self, model: str = "gemini-flash-latest", temperature: float = 0.0) -> None:
+        from .llm import _load_gemini_api_key
+
+        api_key = _load_gemini_api_key()
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "langchain-google-genai 가 설치돼 있지 않습니다. "
+                "pip install -r requirements.txt 하세요."
+            ) from exc
+        self._llm = ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=api_key)
+
+    def entails(self, claim: str, grounding: str) -> bool | None:
+        from pydantic import BaseModel, Field
+
+        class _Entailment(BaseModel):
+            relation: str = Field(description="entailed | contradicted | unknown 중 하나")
+            confident: bool = Field(description="근거만으로 확신할 수 있으면 true")
+
+        prompt = (
+            "너는 출력 검증관이다. 아래 [주장]이 [근거]로부터 논리적으로 뒷받침되는지 판정하라.\n"
+            "- 근거가 주장을 확실히 뒷받침하면 relation='entailed'\n"
+            "- 근거가 주장과 명백히 모순되면 relation='contradicted'\n"
+            "- 근거만으로는 판단할 수 없으면 relation='unknown'\n"
+            "근거에 없는 사실을 상상해서 채우지 마라. 조금이라도 애매하면 confident=false 로 하라.\n\n"
+            f"[주장]\n{claim}\n\n[근거]\n{grounding}"
+        )
+        model = self._llm.with_structured_output(_Entailment, method="function_calling")
+        try:
+            res = model.invoke([{"role": "user", "content": prompt}])
+        except Exception:  # noqa: BLE001 — 검증 호출 실패는 '판단 불가'로 안전하게 처리
+            return None
+        if isinstance(res, dict):
+            res = _Entailment.model_validate(res)
+        if not getattr(res, "confident", False):
+            return None                       # 확신 없음 → 에스컬레이트
+        if res.relation == "entailed":
+            return True
+        if res.relation == "contradicted":
+            return False
+        return None                           # unknown → 에스컬레이트
+
+
 # ---- 4단계 라우터 --------------------------------------------------------------
 
 def decompose(detail: str) -> list[str]:
