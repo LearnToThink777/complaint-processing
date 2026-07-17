@@ -48,8 +48,8 @@ def build_system_prompt(task: str, context: dict[str, Any]) -> str:
     return f"{base}\n\n{body}"
 
 
-def _load_gemini_api_key() -> str:
-    """.env(있으면)를 읽어 GEMINI_API_KEY(또는 GOOGLE_API_KEY)를 돌려준다."""
+def _load_env_key(*names: str) -> str | None:
+    """.env(있으면)를 로드하고, names 중 처음 발견되는 환경변수 값을 돌려준다."""
     import os
 
     try:  # python-dotenv 가 있으면 .env 를 환경변수로 로드
@@ -58,13 +58,50 @@ def _load_gemini_api_key() -> str:
         load_dotenv(ENV_PATH)
     except ModuleNotFoundError:
         pass  # 없으면 이미 환경변수에 있다고 가정
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    for name in names:
+        if os.environ.get(name):
+            return os.environ[name]
+    return None
+
+
+def _load_gemini_api_key() -> str:
+    key = _load_env_key("GEMINI_API_KEY", "GOOGLE_API_KEY")
     if not key:
         raise RuntimeError(
             f".env 에 GEMINI_API_KEY 가 없습니다. Google AI Studio에서 발급받아 "
             f"{ENV_PATH} 에 'GEMINI_API_KEY=...' 로 넣으세요."
         )
     return key
+
+
+def _load_groq_api_key() -> str:
+    key = _load_env_key("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError(
+            f".env 에 GROQ_API_KEY 가 없습니다. console.groq.com에서 발급받아 "
+            f"{ENV_PATH} 에 'GROQ_API_KEY=...' 로 넣으세요."
+        )
+    return key
+
+
+def _invoke_structured(chat_model: Any, task: str, schema: type[T], context: dict[str, Any]) -> T:
+    """공용 구조화 호출 — GeminiLLM·GroqLLM이 공유한다(백엔드가 바뀌어도 호출 방식은 동일).
+
+    ProxyLLM과 같은 관용구(with_structured_output(schema, method="function_calling")).
+    프롬프트는 build_system_prompt(→ tasks.py의 build_prompt)에 위임한다.
+    """
+    model = chat_model.with_structured_output(schema, method="function_calling")
+    result = model.invoke(
+        [
+            {"role": "system", "content": build_system_prompt(task, context)},
+            {"role": "user", "content": f"task={task} 에 대한 구조화 출력을 반환하라."},
+        ]
+    )
+    if isinstance(result, schema):
+        return result
+    if isinstance(result, dict):
+        return schema.model_validate(result)
+    raise RuntimeError(f"예상치 못한 LLM 응답 형태: {type(result)!r}")
 
 
 class LLMBackend(ABC):
@@ -156,6 +193,9 @@ class GeminiLLM(LLMBackend):
 
     # gemini-flash-latest: 구글이 최신 무료 flash로 자동 연결하는 별칭. 특정 버전
     # (gemini-2.5-flash 등)은 신규 계정에 막히거나 deprecate되므로 별칭이 가장 견고.
+    # 주의: 이 별칭이 현재 gemini-3.5-flash로 연결되는데, 무료 티어 daily quota가
+    # 20회/일로 매우 낮다(신규 계정엔 더 넉넉한 2.5-flash류가 막혀 있음). 반복
+    # 테스트·개발엔 GroqLLM을 쓰고, Gemini는 최종 품질 확인용으로 남겨둔다.
     def __init__(self, model: str = "gemini-flash-latest", temperature: float = 0.0) -> None:
         api_key = _load_gemini_api_key()
         try:
@@ -170,18 +210,43 @@ class GeminiLLM(LLMBackend):
         self._llm = ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=api_key)
 
     def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
-        model = self._llm.with_structured_output(schema, method="function_calling")
-        result = model.invoke(
-            [
-                {"role": "system", "content": build_system_prompt(task, context)},
-                {"role": "user", "content": f"task={task} 에 대한 구조화 출력을 반환하라."},
-            ]
-        )
-        if isinstance(result, schema):
-            return result
-        if isinstance(result, dict):
-            return schema.model_validate(result)
-        raise RuntimeError(f"예상치 못한 LLM 응답 형태: {type(result)!r}")
+        return _invoke_structured(self._llm, task, schema, context)
+
+
+class GroqLLM(LLMBackend):
+    """Groq(무료 티어)를 쓰는 실제 LLM 백엔드.
+
+    GeminiLLM과 완전히 같은 관용구(_invoke_structured → with_structured_output)를
+    쓰되, 백엔드가 langchain-groq의 ChatGroq다. Groq 무료 티어는 하루 14,400회로
+    Gemini(신규 계정 20회/일)보다 훨씬 넉넉해서 반복 개발·테스트에 적합하다.
+
+    기본 모델은 llama-3.3-70b-versatile가 아니라 openai/gpt-oss-120b다: 실측 결과
+    llama-3.3-70b는 disclosure(긴 자유서술 한국어를 function-calling으로 반환하는
+    task)에서 같은 토큰을 반복하다 tool_use_failed로 죽는 문제가 재현됐다(순수
+    텍스트 생성은 멀쩡했으므로 한국어 능력이 아니라 이 모델의 tool-calling 디코딩
+    경로 문제로 보임). gpt-oss-120b는 동일 프롬프트에서 정상 작동을 확인했다.
+
+    데이터 정책: Groq는 고객이 명시적으로 허용하지 않는 한 입출력을 학습/파인튜닝에
+    쓰지 않는다(무료/유료 구분 없이 동일) — Gemini 무료 티어(제품개선 목적 사용 허용)
+    보다 이 지점에서 더 보수적이다.
+
+    API 키는 .env 의 GROQ_API_KEY 에서 읽는다(없으면 생성 시점에 실패).
+    """
+
+    def __init__(self, model: str = "openai/gpt-oss-120b", temperature: float = 0.0) -> None:
+        api_key = _load_groq_api_key()
+        try:
+            from langchain_groq import ChatGroq
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "langchain-groq 가 설치돼 있지 않습니다. "
+                "pip install -r requirements.txt (또는 pip install langchain-groq) 하세요."
+            ) from exc
+        self.model_name = model
+        self._llm = ChatGroq(model=model, temperature=temperature, groq_api_key=api_key)
+
+    def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
+        return _invoke_structured(self._llm, task, schema, context)
 
 
 class RetrievalLLM(LLMBackend):
@@ -268,7 +333,7 @@ def get_backend(
     use_llm: bool = False,
     retrieval_index: str | Path | None = None,
     *,
-    provider: str = "gemini",
+    provider: str = "groq",
     facts: str = "",
     observe: bool = True,
     retries: int = 0,
@@ -282,8 +347,10 @@ def get_backend(
     호출부는 "어떤 전략/기능이 필요한지"만 말하고, 어떤 구체 클래스를 어떻게 생성·조합할지는
     이 함수가 캡슐화한다. 기본은 MockLLM(오프라인). use_llm=True면 실제 LLM을 쓰며,
     어느 실제 백엔드를 쓸지는 provider로 고른다:
-      - provider="gemini"(기본): GeminiLLM — Google Gemini 무료 티어(.env의 GEMINI_API_KEY)
-      - provider="proxy"       : ProxyLLM — fixed.llm 프록시(chonnam-clone 저장소 필요)
+      - provider="groq"(기본) : GroqLLM — Groq 무료 티어(.env의 GROQ_API_KEY). 하루 1,000회로
+                                반복 개발·테스트에 적합. Gemini(신규 계정 20회/일)보다 훨씬 넉넉.
+      - provider="gemini"     : GeminiLLM — Google Gemini 무료 티어(.env의 GEMINI_API_KEY)
+      - provider="proxy"      : ProxyLLM — fixed.llm 프록시(chonnam-clone 저장소 필요)
 
     retrieval_index를 주면 그 위에 RetrievalLLM(데코레이터)을 덧씌워 #0/#3만 실검색으로
     바꾼다. #1/#2/#4/#5는 base(Mock/실제LLM)가 담당한다.
@@ -294,13 +361,14 @@ def get_backend(
       - cache=True       : CachingLLM 으로 동일 호출 결과 캐시
       - critic=True      : CriticLLM 으로 출력을 근거(law/facts)에 대조(할루시네이션 검증)
                            critic_enforce=True면 BLOCK 판정 시 CriticBlocked 예외로 산출 차단
-                           실제 LLM(gemini) 모드면 semantic 검증도 GeminiSemanticVerifier로
-                           올린다(어휘겹침 근사 대신 실제 함의 판정).
+                           실제 LLM(groq/gemini) 모드면 semantic 검증도 같은 provider의
+                           LLM으로 올린다(어휘겹침 근사 대신 실제 함의 판정).
     today 를 주면 유사사례 예상 완료일 계산의 기준일을 고정한다(미지정 시 실제 date.today()).
     """
 
+    _REAL_BACKENDS = {"groq": GroqLLM, "gemini": GeminiLLM, "proxy": ProxyLLM}
     if use_llm:
-        base: LLMBackend = GeminiLLM() if provider == "gemini" else ProxyLLM()
+        base: LLMBackend = _REAL_BACKENDS.get(provider, ProxyLLM)()
     else:
         base = MockLLM()
     backend: LLMBackend = (
@@ -311,12 +379,12 @@ def get_backend(
     from .decorators import CachingLLM, CriticLLM, ObservableLLM, RetryingLLM
 
     if critic:
-        # 실제 LLM(gemini) 모드면 Critic의 semantic 검증도 Gemini로. 그 외엔 기본(어휘겹침).
+        # 실제 LLM(groq/gemini) 모드면 Critic의 semantic 검증도 같은 provider로. 그 외엔 기본(어휘겹침).
         semantic = None
-        if use_llm and provider == "gemini":
-            from .critic import GeminiSemanticVerifier
+        if use_llm and provider in ("groq", "gemini"):
+            from .critic import GroqSemanticVerifier, GeminiSemanticVerifier
 
-            semantic = GeminiSemanticVerifier()
+            semantic = GroqSemanticVerifier() if provider == "groq" else GeminiSemanticVerifier()
         backend = CriticLLM(backend, enforce=critic_enforce, semantic=semantic)  # 출력을 근거에 대조
     if cache:
         backend = CachingLLM(backend)

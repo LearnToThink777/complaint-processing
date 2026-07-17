@@ -153,7 +153,9 @@ def _prompt_disclosure(ctx: dict[str, Any]) -> str:
     return (
         "같은 판정을 두 독자에게 나눠 써라. 민원인용(complainant)은 법률 용어 없이 쉽고 "
         "공감적으로, 회사·감독원용(supervisor)은 법조문·판정·근거를 포함해 기술적으로. "
-        "두 글의 사실 내용은 동일하게 유지한다.\n\n"
+        "두 글의 사실 내용은 동일하게 유지한다. 제목에는 반드시 검토 항목 번호를 "
+        f"'#{ctx.get('item_no', '')}' 형식으로 포함하라(예: '진행 안내 #{ctx.get('item_no', '')} · 민원인용').\n\n"
+        f"[검토 항목 번호] {ctx.get('item_no', '')}\n"
         f"[판정 결과]\n{_dump(ctx.get('verdict', {}))}\n"
         f"[남은 검토 항목 수] {ctx.get('remaining', 0)}건"
     )
