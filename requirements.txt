@@ -1,4 +1,5 @@
 pydantic>=2.12,<3
 langchain-google-genai>=2,<3
 langchain-groq>=1,<2
+langchain-openai>=1.4,<2
 python-dotenv>=1,<2

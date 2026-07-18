@@ -84,6 +84,26 @@ def _load_groq_api_key() -> str:
     return key
 
 
+def _load_mlapi_config(base_url_env: str = "MLAPI_NANO_BASE_URL") -> tuple[str, str]:
+    """(api_key, base_url) — 부트캠프 프록시(mlapi.run) 설정을 .env 에서 읽는다.
+
+    mlapi.run은 엔드포인트(UUID)마다 모델이 하나로 고정돼 있어(예: nano 전용,
+    mini 전용), API 키는 공용이지만 base_url은 모델별로 다른 env var로 나눠 읽는다.
+    기본은 MLAPI_NANO_BASE_URL(gpt-5-nano) — mini를 쓰려면 base_url_env="MLAPI_BASE_URL".
+    """
+    key = _load_env_key("MLAPI_API_KEY")
+    if not key:
+        raise RuntimeError(
+            f".env 에 MLAPI_API_KEY 가 없습니다. {ENV_PATH} 에 'MLAPI_API_KEY=...' 로 넣으세요."
+        )
+    base_url = _load_env_key(base_url_env)
+    if not base_url:
+        raise RuntimeError(
+            f".env 에 {base_url_env} 가 없습니다. {ENV_PATH} 에 '{base_url_env}=...' 로 넣으세요."
+        )
+    return key, base_url
+
+
 def _invoke_structured(chat_model: Any, task: str, schema: type[T], context: dict[str, Any]) -> T:
     """공용 구조화 호출 — GeminiLLM·GroqLLM이 공유한다(백엔드가 바뀌어도 호출 방식은 동일).
 
@@ -249,6 +269,52 @@ class GroqLLM(LLMBackend):
         return _invoke_structured(self._llm, task, schema, context)
 
 
+class MlapiLLM(LLMBackend):
+    """부트캠프에서 제공하는 OpenAI 호환 프록시(mlapi.run)를 쓰는 실제 LLM 백엔드.
+
+    chonnam-clone 저장소의 ProxyLLM(fixed.llm.chat_model())과는 별개의 엔드포인트다 —
+    이건 그 저장소와 무관한, 사용자가 부트캠프에서 별도로 받은 프록시(OpenAI
+    /v1/chat/completions 미러)를 가리킨다. mlapi.run은 엔드포인트(UUID)마다 모델이
+    하나로 고정돼 있어(nano 전용, mini 전용 등) model과 base_url_env를 함께 바꿔야 한다.
+
+    기본값은 gpt-5-nano다(개발 단계 기본 선택 — 나중에 실제 시연 때는 더 좋은 LLM으로
+    바꿀 예정). 실측 비교(2026-07): gpt-5-mini는 품질은 더 좋지만 전체 파이프라인
+    (16회 연쇄 호출)이 10분+ 걸려 미완료, gpt-5-nano는 같은 파이프라인을 263초에
+    완주했다. 속도 때문에 지금 단계엔 nano를 기본으로 둔다.
+
+    langchain_openai.ChatOpenAI를 커스텀 base_url로 겨냥해 GeminiLLM·GroqLLM과
+    동일한 _invoke_structured 관용구를 그대로 쓴다. 인증은 .env 의 MLAPI_API_KEY,
+    엔드포인트는 base_url_env로 지정한 변수(기본 MLAPI_NANO_BASE_URL)에서 읽는다.
+
+    temperature 기본값 없음: gpt-5-nano/mini 등 GPT-5 계열은 temperature=0을 지원하지
+    않고 기본값(1)만 허용한다(실제 호출로 확인, 다른 값 주면 400 에러). 그래서
+    다른 백엔드처럼 0.0을 강제하지 않고, 지정 안 하면 그냥 모델 기본값을 쓴다.
+    """
+
+    def __init__(
+        self,
+        model: str = "openai/gpt-5-nano",
+        temperature: float | None = None,
+        base_url_env: str = "MLAPI_NANO_BASE_URL",
+    ) -> None:
+        api_key, base_url = _load_mlapi_config(base_url_env)
+        try:
+            from langchain_openai import ChatOpenAI
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "langchain-openai 가 설치돼 있지 않습니다. "
+                "pip install -r requirements.txt (또는 pip install langchain-openai) 하세요."
+            ) from exc
+        self.model_name = model
+        kwargs: dict[str, Any] = {"model": model, "api_key": api_key, "base_url": base_url}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        self._llm = ChatOpenAI(**kwargs)
+
+    def structured(self, task: str, schema: type[T], context: dict[str, Any]) -> T:
+        return _invoke_structured(self._llm, task, schema, context)
+
+
 class RetrievalLLM(LLMBackend):
     """(b) 검색 백엔드 — task="checklist_plan"과 "similar_cases"만 진짜 벡터 검색으로 처리.
 
@@ -333,7 +399,7 @@ def get_backend(
     use_llm: bool = False,
     retrieval_index: str | Path | None = None,
     *,
-    provider: str = "groq",
+    provider: str = "mlapi",
     facts: str = "",
     observe: bool = True,
     retries: int = 0,
@@ -347,10 +413,14 @@ def get_backend(
     호출부는 "어떤 전략/기능이 필요한지"만 말하고, 어떤 구체 클래스를 어떻게 생성·조합할지는
     이 함수가 캡슐화한다. 기본은 MockLLM(오프라인). use_llm=True면 실제 LLM을 쓰며,
     어느 실제 백엔드를 쓸지는 provider로 고른다:
-      - provider="groq"(기본) : GroqLLM — Groq 무료 티어(.env의 GROQ_API_KEY). 하루 1,000회로
-                                반복 개발·테스트에 적합. Gemini(신규 계정 20회/일)보다 훨씬 넉넉.
+      - provider="mlapi"(기본): MlapiLLM — 부트캠프 제공 OpenAI 호환 프록시(.env의
+                                MLAPI_API_KEY·MLAPI_NANO_BASE_URL), 기본 모델 gpt-5-nano.
+                                개발 단계 임시 기본값 — 실제 시연 전에 더 좋은 LLM으로
+                                교체 예정(MlapiLLM 참고).
+      - provider="groq"       : GroqLLM — Groq 무료 티어(.env의 GROQ_API_KEY). 하루 14,400회로
+                                반복 개발·테스트에 적합. (2026-07 기준 키 인증 오류로 임시 사용 불가)
       - provider="gemini"     : GeminiLLM — Google Gemini 무료 티어(.env의 GEMINI_API_KEY)
-      - provider="proxy"      : ProxyLLM — fixed.llm 프록시(chonnam-clone 저장소 필요)
+      - provider="proxy"      : ProxyLLM — fixed.llm 프록시(chonnam-clone 저장소 필요, mlapi와 별개)
 
     retrieval_index를 주면 그 위에 RetrievalLLM(데코레이터)을 덧씌워 #0/#3만 실검색으로
     바꾼다. #1/#2/#4/#5는 base(Mock/실제LLM)가 담당한다.
@@ -366,7 +436,7 @@ def get_backend(
     today 를 주면 유사사례 예상 완료일 계산의 기준일을 고정한다(미지정 시 실제 date.today()).
     """
 
-    _REAL_BACKENDS = {"groq": GroqLLM, "gemini": GeminiLLM, "proxy": ProxyLLM}
+    _REAL_BACKENDS = {"groq": GroqLLM, "gemini": GeminiLLM, "mlapi": MlapiLLM, "proxy": ProxyLLM}
     if use_llm:
         base: LLMBackend = _REAL_BACKENDS.get(provider, ProxyLLM)()
     else:
@@ -379,12 +449,13 @@ def get_backend(
     from .decorators import CachingLLM, CriticLLM, ObservableLLM, RetryingLLM
 
     if critic:
-        # 실제 LLM(groq/gemini) 모드면 Critic의 semantic 검증도 같은 provider로. 그 외엔 기본(어휘겹침).
+        # 실제 LLM(groq/gemini/mlapi) 모드면 Critic의 semantic 검증도 같은 provider로. 그 외엔 기본(어휘겹침).
         semantic = None
-        if use_llm and provider in ("groq", "gemini"):
-            from .critic import GroqSemanticVerifier, GeminiSemanticVerifier
+        if use_llm and provider in ("groq", "gemini", "mlapi"):
+            from .critic import GroqSemanticVerifier, GeminiSemanticVerifier, MlapiSemanticVerifier
 
-            semantic = GroqSemanticVerifier() if provider == "groq" else GeminiSemanticVerifier()
+            _VERIFIERS = {"groq": GroqSemanticVerifier, "gemini": GeminiSemanticVerifier, "mlapi": MlapiSemanticVerifier}
+            semantic = _VERIFIERS[provider]()
         backend = CriticLLM(backend, enforce=critic_enforce, semantic=semantic)  # 출력을 근거에 대조
     if cache:
         backend = CachingLLM(backend)

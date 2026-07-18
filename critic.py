@@ -209,6 +209,49 @@ class GroqSemanticVerifier:
         return _entails_via_chat_model(self._llm, claim, grounding)
 
 
+class MlapiSemanticVerifier:
+    """실제 LLM(부트캠프 mlapi.run 프록시)로 함의를 판정하는 semantic 검증 전략.
+
+    GeminiSemanticVerifier·GroqSemanticVerifier와 동일하게 _entails_via_chat_model에
+    위임한다. llm.py의 MlapiLLM과 같은 프록시(.env의 MLAPI_API_KEY, base_url_env로
+    지정한 엔드포인트)를 쓴다. 기본은 gpt-5-nano(llm.py의 MlapiLLM 참고 — 개발 단계
+    기본 선택, 나중에 실제 시연 때는 더 좋은 LLM으로 교체 예정).
+
+    주의(2026-07 실측): 전체 파이프라인에서 이 검증기(nano)를 쓰면 PASS 0 · ESCALATE 7
+    로 전부 애매함 처리됐다. gpt-oss-120b(Groq)와의 직접 비교는 당시 Groq 키가
+    401로 막혀 있어 못 했음 — nano의 판정 정확도 자체가 나쁜 건지 그냥 보수적인
+    성향인지 아직 검증 안 됨. 지금은 개발 단계라 우선 이대로 쓰고, 실제 시연 전에
+    재검증이 필요하다.
+
+    temperature 기본값 없음 — gpt-5 계열은 temperature=0을 지원하지 않는다(llm.py의
+    MlapiLLM 참고).
+    """
+
+    def __init__(
+        self,
+        model: str = "openai/gpt-5-nano",
+        temperature: float | None = None,
+        base_url_env: str = "MLAPI_NANO_BASE_URL",
+    ) -> None:
+        from .llm import _load_mlapi_config
+
+        api_key, base_url = _load_mlapi_config(base_url_env)
+        try:
+            from langchain_openai import ChatOpenAI
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "langchain-openai 가 설치돼 있지 않습니다. "
+                "pip install -r requirements.txt 하세요."
+            ) from exc
+        kwargs: dict[str, Any] = {"model": model, "api_key": api_key, "base_url": base_url}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        self._llm = ChatOpenAI(**kwargs)
+
+    def entails(self, claim: str, grounding: str) -> bool | None:
+        return _entails_via_chat_model(self._llm, claim, grounding)
+
+
 # ---- 4단계 라우터 --------------------------------------------------------------
 
 def decompose(detail: str) -> list[str]:
