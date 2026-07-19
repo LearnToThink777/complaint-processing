@@ -336,13 +336,27 @@ class RetrievalLLM(LLMBackend):
         facts: str = "",
         today: date | None = None,
     ) -> None:
-        from .retrieval import Chunk, VectorStore
+        from .retrieval import Chunk, EmbeddingScorer, VectorStore
 
         self._base = base or MockLLM()
         self._facts = facts
         self._today = today or date.today()
         raw = json.loads(Path(index_path).read_text(encoding="utf-8"))
-        self._store = VectorStore([Chunk.model_validate(c) for c in raw])
+        chunks = [Chunk.model_validate(c) for c in raw]
+        # 색인에 사전계산 임베딩이 있으면 EmbeddingScorer 로 검색(질의 임베딩 1회만 발생).
+        # 임베딩 클라이언트 생성 실패(키 없음 등) 시엔 기존 어휘 겹침(Jaccard)으로 폴백 —
+        # 임베딩 없는 기존 색인은 이 분기 자체를 타지 않아 동작이 100% 동일하다.
+        scorer = None
+        if any(c.embedding for c in chunks):
+            try:
+                from .retrieval import default_gemini_embed_fn
+
+                # eager 생성 — EmbeddingScorer 기본은 지연 생성이라 키 부재가 검색
+                # 시점에야 터진다. 여기서 미리 만들어봐야 폴백 분기가 의미 있다.
+                scorer = EmbeddingScorer(embed_fn=default_gemini_embed_fn())
+            except Exception:
+                scorer = None
+        self._store = VectorStore(chunks, scorer=scorer)
 
     # 코퍼스에 없는(=법조문이 아닌) 표준 처리 절차. 사건과 무관하게 항상 필요하므로
     # 검색 대상이 아니라 고정 워크플로 단계로 취급한다.

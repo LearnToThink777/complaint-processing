@@ -51,12 +51,25 @@ class TaskSpec:
 
 def _mock_verdict(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
     n = context["item_no"]
-    return dict(fx["verdict"][str(n)])
+    hit = fx["verdict"].get(str(n))
+    if hit:
+        return dict(hit)
+    # fixtures 는 데모 6항목분만 있다. 검토 계획(#0)이 실검색으로 더 많은 항목을
+    # 도출하면(RetrievalLLM + MockLLM 조합) 초과분은 context로 일반 판정을 합성한다.
+    return {
+        "code": context.get("law", f"검토 항목 #{n}"),
+        "verdict": "해당없음",
+        "ko": f"{context.get('item', f'항목 #{n}')} — 더미 판정",
+        "detail": "fixtures 데모 범위 밖 항목이라 더미 백엔드가 일반 판정을 반환했습니다(실제 LLM 모드에서 실판정).",
+    }
 
 
 def _mock_disclosure(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
     n = context["item_no"]
-    d = fx["disclosure"][str(n)]
+    d = fx["disclosure"].get(str(n)) or {
+        "complainant_body": f"{n}번째 검토 항목 처리가 끝났어요. 다음 단계로 진행 중입니다.",
+        "supervisor_body": f"검토 항목 #{n} 처리 완료.",
+    }
     remaining = context.get("remaining", 0)
     return {
         "complainant_title": f"진행 안내 #{n} · 민원인용 / Complainant",

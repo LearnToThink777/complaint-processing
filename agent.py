@@ -196,8 +196,10 @@ class ComplaintAgent:
                           "body": f"민원이 정식 접수되었습니다. 예상 처리 기한은 {self.due_date}이며, 진행 상황을 단계별로 알려드릴게요."}
         self.emit(("접수·이관", "Intake & handoff"), "관련 법령·절차 조회(vectorDB) → 검토 계획 + 처리 기한 공유")
 
-        # 2) 처리 루프 앞 3건
-        for n in (1, 2, 3):
+        # 2) 처리 루프 전반부 — 항목 수는 검토 계획(#0)이 사건마다 도출하므로 고정이 아니다
+        ns = [c["n"] for c in self.checklist]
+        mid = (len(ns) + 1) // 2
+        for n in ns[:mid]:
             self._process_item(n)
 
         # 3) 스케줄러 wake → 여유 판정 (LLM #3)
@@ -225,8 +227,8 @@ class ComplaintAgent:
             self._hist("", f"기한 재조정 합의 · 새 처리 기한 {self.due_date} (사람이 결정)", "처리 기한 재조정")
             self.emit(("협상", "Renegotiation"), "합의된 새 처리 기한 저장 · 내부 점검 재설정")
 
-        # 5) 처리 루프 나머지 3건
-        for n in (4, 5, 6):
+        # 5) 처리 루프 후반부
+        for n in ns[mid:]:
             self._process_item(n)
 
         # 6) 완결성 게이트 (결정론: 남은 항목 0인지 확인) → 종결

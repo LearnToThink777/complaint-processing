@@ -26,15 +26,16 @@ class Chunk(BaseModel):
     """색인 단위 1개. text(원문 조각) + metadata(파싱) + labels(LLM 생성)."""
 
     chunk_id: str = Field(description="청크 식별자. 예: '금융소비자보호법#제17조'.")
-    source_type: str = Field(description="'statute'(법령) | 'decision'(분쟁조정 결정문).")
+    source_type: str = Field(description="'statute'(법령) | 'decision'(분쟁조정 결정문) | 'admin_decision'(행정기관 결정문·재결례) | 'law_interp'(법령해석례).")
     text: str = Field(description="자른 원문 조각.")
     metadata: dict[str, Any] = Field(default_factory=dict, description="파싱으로 뽑은 정형 태그.")
     labels: dict[str, Any] = Field(default_factory=dict, description="ChunkLabels.model_dump() — LLM 생성.")
+    embedding: list[float] | None = Field(default=None, description="색인 시 사전계산한 임베딩 벡터(선택). 없으면 검색 시 계산 또는 어휘 겹침 폴백.")
 
     @property
     def search_text(self) -> str:
         """임베딩/검색 대상 텍스트 = 원문 + 정형 메타 + 일상어 라벨(비대칭 해소분)."""
-        meta = [str(self.metadata.get(k, "")) for k in ("law_name", "article", "case_display", "product_en")]
+        meta = [str(self.metadata.get(k, "")) for k in ("law_name", "article", "case_display", "product_en", "title", "org_name")]
         parts = [self.text, *meta, self.labels.get("issue_summary", "")]
         parts += self.labels.get("keywords", []) or []
         parts += self.labels.get("everyday_questions", []) or []
@@ -93,6 +94,57 @@ def chunk_decision(raw: str, *, meta: dict[str, Any]) -> list[Chunk]:
                 metadata={**meta, "section": section},
             )
         )
+    return chunks
+
+
+_MAX_SECTION_CHARS = 6000   # 이보다 긴 섹션은 문단 경계에서 분할(임베딩 입력 한도 보호)
+
+
+def chunk_sections(
+    sections: list[tuple[str, str]],
+    *,
+    doc_id: str,
+    source_type: str,
+    meta: dict[str, Any],
+) -> list[Chunk]:
+    """(섹션명, 텍스트) 목록 → 섹션 1개 = 청크 1개. law.go.kr 결정문·해석례용.
+
+    chunk_statute 의 '제N조' 정규식과 달리 재분할이 없다 — 섹션 경계는 XML 태그로
+    이미 확정돼 있고, 본문 속 '제N조' 인용 때문에 오분할될 여지를 원천 차단한다.
+    지나치게 긴 섹션만 문단(빈 줄) 경계에서 나눠 #2, #3 접미를 붙인다.
+    """
+    chunks: list[Chunk] = []
+    for name, text in sections:
+        parts = [text]
+        if len(text) > _MAX_SECTION_CHARS:
+            # 문단(빈 줄) 경계 우선, 문단 하나가 한도를 넘으면 개행→고정폭 순으로 강제 분할
+            paras: list[str] = []
+            for para in text.split("\n\n"):
+                while len(para) > _MAX_SECTION_CHARS:
+                    cut = para.rfind("\n", 0, _MAX_SECTION_CHARS)
+                    cut = cut if cut > 0 else _MAX_SECTION_CHARS
+                    paras.append(para[:cut])
+                    para = para[cut:]
+                paras.append(para)
+            parts, buf = [], ""
+            for para in paras:
+                if buf and len(buf) + len(para) > _MAX_SECTION_CHARS:
+                    parts.append(buf)
+                    buf = para
+                else:
+                    buf = f"{buf}\n\n{para}" if buf else para
+            if buf:
+                parts.append(buf)
+        for i, part in enumerate(parts):
+            suffix = f"#{i + 1}" if len(parts) > 1 else ""
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{doc_id}#{name}{suffix}",
+                    source_type=source_type,
+                    text=part.strip(),
+                    metadata={**meta, "section": name},
+                )
+            )
     return chunks
 
 
@@ -211,7 +263,12 @@ class EmbeddingScorer(ScorerStrategy):
         if query not in self._qcache:
             self._qcache[query] = self.embed_fn([query], True)[0]
         if chunk.chunk_id not in self._dcache:
-            self._dcache[chunk.chunk_id] = self.embed_fn([chunk.search_text], False)[0]
+            # 색인 시 사전계산된 벡터가 있으면 그대로 사용 — 문서 임베딩 API 호출 0회,
+            # 검색 1회당 질의 임베딩 1회만 남는다.
+            if chunk.embedding:
+                self._dcache[chunk.chunk_id] = chunk.embedding
+            else:
+                self._dcache[chunk.chunk_id] = self.embed_fn([chunk.search_text], False)[0]
         return cosine(self._qcache[query], self._dcache[chunk.chunk_id])
 
 

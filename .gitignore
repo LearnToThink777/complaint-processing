@@ -12,6 +12,9 @@ venv/
 .env
 *.local
 
+# law.go.kr 수집 캐시·색인 체크포인트 (collect_corpus.py / build_index.py 산출물 — 재현 가능)
+data/
+
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
 
