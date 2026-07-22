@@ -105,6 +105,29 @@ def _mock_disclosure(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, A
     }
 
 
+def _mock_verdict_batch(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
+    # 항목별 더미(_mock_verdict)를 그대로 재사용해 배치 결과를 조립한다.
+    # → 배칭 전(항목별 N회 호출)과 오프라인 출력이 한 글자도 다르지 않다(골든 보존).
+    items = context.get("items", [])
+    return {
+        "verdicts": [
+            _mock_verdict({"item_no": it["n"], "item": it.get("item", ""), "law": it.get("law", "")}, fx)
+            for it in items
+        ]
+    }
+
+
+def _mock_disclosure_batch(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
+    # 항목별 더미(_mock_disclosure)를 그대로 재사용. remaining 은 호출부가 항목별로 계산해 넘긴다.
+    items = context.get("items", [])
+    return {
+        "disclosures": [
+            _mock_disclosure({"item_no": it["n"], "remaining": it.get("remaining", 0)}, fx)
+            for it in items
+        ]
+    }
+
+
 def _mock_similar_cases(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
     return dict(fx["similar_cases"])
 
@@ -248,6 +271,33 @@ def _prompt_disclosure(ctx: dict[str, Any]) -> str:
     )
 
 
+def _prompt_verdict_batch(ctx: dict[str, Any]) -> str:
+    items = ctx.get("items", [])
+    lines = "\n".join(f"[검토 항목 #{it['n']}] {it.get('item','')} (근거 법령: {it.get('law','')})" for it in items)
+    return (
+        "아래 검토 항목 전부를 사건 사실에 대조해 각각 규정 판정을 내려라. "
+        "항목마다 하나씩, 입력 순서 그대로 배열(verdicts)로 반환하라 — 항목 수와 판정 수가 같아야 한다. "
+        "판정 근거로 조문을 인용하되 사건 사실에 없는 조문·수치는 지어내지 마라. 애매하면 단정하지 마라.\n\n"
+        f"[검토 항목 목록]\n{lines}\n\n"
+        f"[사건 사실]\n{ctx.get('facts', '')}"
+    )
+
+
+def _prompt_disclosure_batch(ctx: dict[str, Any]) -> str:
+    items = ctx.get("items", [])
+    blocks = "\n".join(
+        f"[항목 #{it['n']}] 판정={_dump(it.get('verdict', {}))} · 남은 검토 {it.get('remaining', 0)}건"
+        for it in items
+    )
+    return (
+        "아래 각 판정을 두 독자용으로 나눠 써라 — 민원인용(complainant)은 법률 용어 없이 쉽고 공감적으로, "
+        "회사·감독원용(supervisor)은 법조문·판정·근거를 포함해 기술적으로. 두 글의 사실 내용은 동일하게 유지한다. "
+        "제목에는 반드시 항목 번호를 '#n' 형식으로 포함하라. 입력 순서 그대로 배열(disclosures)로 반환하라 — "
+        "항목 수와 공개 수가 같아야 한다.\n\n"
+        f"[항목별 판정]\n{blocks}"
+    )
+
+
 def _prompt_similar_cases(ctx: dict[str, Any]) -> str:
     return (
         "유사 과거 분쟁 사례를 근거로 예상 완료일을 추정하고 처리 기한 초과 위험을 판정하라.\n\n"
@@ -310,7 +360,9 @@ _BASE_GUIDE = (
 _ALL_SPECS: list[TaskSpec] = [
     TaskSpec("checklist_plan", _prompt_checklist_plan, _mock_checklist_plan),
     TaskSpec("verdict", _prompt_verdict, _mock_verdict),
+    TaskSpec("verdict_batch", _prompt_verdict_batch, _mock_verdict_batch),
     TaskSpec("disclosure", _prompt_disclosure, _mock_disclosure),
+    TaskSpec("disclosure_batch", _prompt_disclosure_batch, _mock_disclosure_batch),
     TaskSpec("similar_cases", _prompt_similar_cases, _mock_similar_cases),
     TaskSpec("renegotiation", _prompt_renegotiation, _mock_renegotiation),
     TaskSpec("closing_disclosure", _prompt_closing_disclosure, _mock_closing_disclosure),

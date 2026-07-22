@@ -60,6 +60,8 @@ def test_criticllm_on_full_run_reports_no_block() -> None:
     # 전체 실행(mock-only)에 critic(보고 전용)을 붙여도 정상 fixtures 는 BLOCK 이 없다.
     # 주: 검색(retrieval)을 켜면 검토항목이 코퍼스 순서로 재배열돼 fixture 판정과 조문이
     #     위치상 어긋날 수 있으므로(데모 데이터 특성), 검증 배선 테스트는 mock-only로 한다.
+    # 호출 최적화 이후: verdict 는 배치(verdict_batch)로 한 묶음으로 검증되므로 reviewed 는
+    #     항목 수가 아니라 '검증된 산출물 수'(verdict_batch + renegotiation ≈ 2)를 센다.
     fx = json.loads((_PKG / "fixtures.json").read_text(encoding="utf-8"))
     case = ComplaintCase.model_validate(fx["case"])
     be = get_backend(use_llm=False, critic=True)
@@ -67,5 +69,5 @@ def test_criticllm_on_full_run_reports_no_block() -> None:
     critic = unwrap(be, CriticLLM)
     assert critic is not None
     s = critic.summary()
-    assert s["reviewed"] >= 6            # verdict 6건 이상 검증됨
+    assert s["reviewed"] >= 1            # verdict_batch 가 한 묶음으로 검증됨(배칭)
     assert s["BLOCK"] == 0               # 정상 fixtures → 오판 차단 없음

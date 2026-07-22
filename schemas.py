@@ -48,6 +48,26 @@ class DualDisclosure(BaseModel):
     supervisor_body: str = Field(description="감독원용 본문. 적용 법률·판정·근거·남은 검토 건수를 포함한 기술적 요약.")
 
 
+class VerdictBatch(BaseModel):
+    """검토 항목 여러 건을 한 번의 LLM 호출로 판정한 묶음.
+
+    항목마다 verdict를 따로 호출하면(N회) reasoning 모델에선 시간이 선형으로 늘어난다.
+    사건 사실은 공유되므로 전 항목을 한 프롬프트에 담아 배열로 받아 호출을 1회로 줄인다.
+    verdicts[i] 는 입력 items[i] 순서와 1:1 대응한다.
+    """
+
+    verdicts: list[RegulatoryVerdict] = Field(description="검토 항목 순서대로의 규정 판정 목록.")
+
+
+class DisclosureBatch(BaseModel):
+    """검토 항목 여러 건의 이중 공개를 한 번의 LLM 호출로 작성한 묶음.
+
+    disclosures[i] 는 입력 items[i](검토 항목 번호·판정) 순서와 1:1 대응한다.
+    """
+
+    disclosures: list[DualDisclosure] = Field(description="검토 항목 순서대로의 이중 공개 목록.")
+
+
 class SimilarCase(BaseModel):
     """사례 DB(벡터 검색)에서 조회된 유사 과거 분쟁 1건."""
 

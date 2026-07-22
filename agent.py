@@ -23,11 +23,13 @@ from .schemas import (
     ChecklistPlan,
     ComplaintCase,
     ConsumerRightsGuide,
+    DisclosureBatch,
     DualDisclosure,
     GeneralGuidance,
     RegulatoryVerdict,
     RenegotiationDraft,
     SimilarCasesResult,
+    VerdictBatch,
 )
 
 
@@ -51,6 +53,9 @@ class ComplaintAgent:
     ) -> None:
         self.case = case
         self.llm = llm or get_backend(use_llm=False)
+        # 검토 항목 판정·이중공개를 루프 전에 배치로 받아 담아두는 캐시(호출 횟수 절감).
+        self._verdicts: dict[int, RegulatoryVerdict] = {}
+        self._disclosures: dict[int, DualDisclosure] = {}
         # 상태 — 콘솔의 s 객체와 동일한 필드 구성
         self.status = ("접수 대기", "Awaiting intake")
         # 접수 전엔 어떤 민원인지 모른다 — 분류·검토 항목 둘 다 이관 시 LLM #0이 채운다.
@@ -124,6 +129,32 @@ class ComplaintAgent:
             DualDisclosure,
             {"item_no": n, "verdict": verdict.model_dump(), "remaining": remaining},
         )
+
+    def review_all(self) -> dict[int, RegulatoryVerdict]:
+        """[LLM #1·배치] 전 검토 항목의 규정 판정을 한 번의 호출로.
+
+        항목별로 verdict를 N회 부르는 대신(reasoning 모델에서 시간이 선형 증가) 사건 사실을
+        공유하는 전 항목을 한 프롬프트에 담아 배열로 받는다. 오프라인(MockLLM)에서는
+        _mock_verdict_batch가 항목별 더미를 그대로 재사용하므로 출력이 배칭 전과 동일하다.
+        Critic은 이 배치 산출물 하나만 검증하므로 검증 호출도 함께 줄어든다.
+        """
+        items = [{"n": c["n"], "item": c["item"], "law": c["law"]} for c in self.checklist]
+        batch = self.llm.structured("verdict_batch", VerdictBatch, {"items": items, "facts": self.case.facts, "law": [c["law"] for c in self.checklist]})
+        return {c["n"]: v for c, v in zip(self.checklist, batch.verdicts)}
+
+    def disclose_all(self, verdicts: dict[int, RegulatoryVerdict]) -> dict[int, DualDisclosure]:
+        """[LLM #2·배치] 전 항목의 이중 공개를 한 번의 호출로.
+
+        remaining(남은 검토 건수)은 처리 순서대로 total-n 으로 계산해 항목별과 동일하게 맞춘다
+        (항목 n을 처리하면 1..n이 done → 남은 건수 = total-n). 오프라인 출력이 배칭 전과 동일.
+        """
+        total = len(self.checklist)
+        items = [
+            {"n": c["n"], "verdict": verdicts[c["n"]].model_dump(), "remaining": total - c["n"]}
+            for c in self.checklist
+        ]
+        batch = self.llm.structured("disclosure_batch", DisclosureBatch, {"items": items})
+        return {c["n"]: d for c, d in zip(self.checklist, batch.disclosures)}
 
     def retrieve_similar_cases(self) -> SimilarCasesResult:
         """[LLM #3] 유사 사례 검색(RAG) + 완료일 추정 + 기한 초과 위험 판정."""
@@ -202,13 +233,18 @@ class ComplaintAgent:
         item = next(c for c in self.checklist if c["n"] == n)
         self.status = ("처리 중", "In progress")
 
-        verdict = self.review_item(n)  # LLM #1
+        # 판정·이중공개는 루프 진입 전에 배치로 미리 받아둔 값을 쓴다(LLM 호출은 여기서 안 함).
+        # 배치가 없으면(안전망) 항목별 단발 호출로 폴백한다.
+        verdict = self._verdicts.get(n) if self._verdicts else None
+        if verdict is None:
+            verdict = self.review_item(n)  # 폴백: LLM #1(단발)
         item["done"] = True
         self.ledger.append(verdict.model_dump())
         self._hist("②", f"[③→②] {item['item']} → {verdict.code} {verdict.verdict}", f"적용 법률 원장 · {verdict.code}")
 
-        remaining = self._remaining()
-        disc = self.dual_disclose(n, verdict, remaining)  # LLM #2
+        disc = self._disclosures.get(n) if self._disclosures else None
+        if disc is None:
+            disc = self.dual_disclose(n, verdict, self._remaining())  # 폴백: LLM #2(단발)
         self.discloseR = {"title": disc.supervisor_title, "body": disc.supervisor_body}
         self.discloseU = {"title": disc.complainant_title, "body": disc.complainant_body}
         self.emit(("처리 루프", "Processing loop"), "항목 처리 결과 → ② 원장 반영 · 이중 공개")
@@ -270,7 +306,13 @@ class ComplaintAgent:
                           "body": f"민원이 정식 접수되었습니다. 예상 처리 기한은 {self.due_date}이며, 진행 상황을 단계별로 알려드릴게요."}
         self.emit(("접수·이관", "Intake & handoff"), "관련 법령·절차 조회(vectorDB) → 검토 계획 + 처리 기한 공유")
 
-        # 2) 처리 루프 전반부 — 항목 수는 검토 계획(#0)이 사건마다 도출하므로 고정이 아니다
+        # 2) 처리 루프 — 판정·이중공개를 항목마다 부르지 않고 배치로 한 번에 받아둔다.
+        #    (verdict N회 + disclosure N회 → 각 1회. reasoning 모델 시간을 크게 줄인다.)
+        #    _process_item 은 이 캐시를 읽어 원장 반영·이중공개·프레임 emit 만 결정론으로 수행한다.
+        self._verdicts = self.review_all()  # LLM #1·배치 (1회)
+        self._disclosures = self.disclose_all(self._verdicts)  # LLM #2·배치 (1회)
+
+        # 처리 루프 전반부 — 항목 수는 검토 계획(#0)이 사건마다 도출하므로 고정이 아니다
         ns = [c["n"] for c in self.checklist]
         mid = (len(ns) + 1) // 2
         for n in ns[:mid]:

@@ -114,6 +114,10 @@ class LexicalEntailment:
         overlap = len(cq & _tokens(grounding)) / len(cq)
         return True if overlap >= self.threshold else None
 
+    def entails_batch(self, claims: list[str], grounding: str) -> list[bool | None]:
+        # 어휘겹침은 LLM 호출이 없어 배치 이득이 없지만, 인터페이스 일관성을 위해 제공.
+        return [self.entails(c, grounding) for c in claims]
+
 
 def _entails_via_chat_model(chat_model: Any, claim: str, grounding: str) -> bool | None:
     """공용 함의 판정 호출 — GeminiSemanticVerifier·GroqSemanticVerifier가 공유한다.
@@ -157,6 +161,69 @@ def _entails_via_chat_model(chat_model: Any, claim: str, grounding: str) -> bool
     return None                           # unknown → 에스컬레이트
 
 
+def _entails_batch_via_chat_model(chat_model: Any, claims: list[str], grounding: str) -> list[bool | None]:
+    """여러 claim을 한 번의 LLM 호출로 함의 판정 — claim 수만큼 부르지 않는다(호출 절감).
+
+    각 claim에 대해 _entails_via_chat_model 과 동일한 규칙(확신 없으면 None)을 적용하되,
+    번호(index)를 붙여 배열로 한꺼번에 받는다. 실패·누락 시 해당 claim은 None(에스컬레이트).
+    """
+    if not claims:
+        return []
+    from pydantic import BaseModel, Field
+
+    class _J(BaseModel):
+        index: int = Field(description="주장 번호(0부터 시작)")
+        relation: str = Field(description="entailed | contradicted | unknown 중 하나")
+        confident: bool = Field(description="근거만으로 확신할 수 있으면 true")
+
+    class _Batch(BaseModel):
+        judgments: list[_J] = Field(description="각 주장의 판정(주장 수와 같아야 함)")
+
+    numbered = "\n".join(f"[{i}] {c}" for i, c in enumerate(claims))
+    prompt = (
+        "너는 출력 검증관이다. 아래 [주장 목록]의 각 주장이 [근거]로부터 논리적으로 뒷받침되는지 "
+        "하나씩 판정하라. 주장마다 index(번호)·relation·confident 를 낸다.\n"
+        "- 근거가 주장을 확실히 뒷받침 → relation='entailed'\n"
+        "- 근거가 주장과 명백히 모순 → relation='contradicted'\n"
+        "- 근거만으론 판단 불가 → relation='unknown'\n"
+        "근거에 없는 사실을 상상해서 채우지 마라. 조금이라도 애매하면 confident=false 로 하라.\n\n"
+        f"[주장 목록]\n{numbered}\n\n[근거]\n{grounding}"
+    )
+    model = chat_model.with_structured_output(_Batch, method="function_calling")
+    try:
+        res = model.invoke([{"role": "user", "content": prompt}])
+    except Exception:  # noqa: BLE001 — 검증 호출 실패는 전부 '판단 불가'로 안전 처리
+        return [None] * len(claims)
+    if isinstance(res, dict):
+        res = _Batch.model_validate(res)
+    out: list[bool | None] = [None] * len(claims)
+    for j in getattr(res, "judgments", []) or []:
+        i = getattr(j, "index", -1)
+        if not (0 <= i < len(claims)):
+            continue
+        if not getattr(j, "confident", False):
+            out[i] = None
+        elif getattr(j, "relation", "") == "entailed":
+            out[i] = True
+        elif getattr(j, "relation", "") == "contradicted":
+            out[i] = False
+        else:
+            out[i] = None
+    return out
+
+
+def _semantic_verdicts(verifier: Any, claims: list[str], grounding: str) -> list[bool | None]:
+    """semantic claim들을 판정 — verifier가 entails_batch를 지원하면 배치(1회), 아니면 개별 폴백."""
+    if not claims:
+        return []
+    batch = getattr(verifier, "entails_batch", None)
+    if callable(batch):
+        res = batch(claims, grounding)
+        if isinstance(res, list) and len(res) == len(claims):
+            return res
+    return [verifier.entails(c, grounding) for c in claims]
+
+
 class GeminiSemanticVerifier:
     """실제 LLM(Gemini)로 함의(entailment)를 판정하는 semantic 검증 전략.
 
@@ -179,6 +246,9 @@ class GeminiSemanticVerifier:
 
     def entails(self, claim: str, grounding: str) -> bool | None:
         return _entails_via_chat_model(self._llm, claim, grounding)
+
+    def entails_batch(self, claims: list[str], grounding: str) -> list[bool | None]:
+        return _entails_batch_via_chat_model(self._llm, claims, grounding)
 
 
 class GroqSemanticVerifier:
@@ -207,6 +277,9 @@ class GroqSemanticVerifier:
 
     def entails(self, claim: str, grounding: str) -> bool | None:
         return _entails_via_chat_model(self._llm, claim, grounding)
+
+    def entails_batch(self, claims: list[str], grounding: str) -> list[bool | None]:
+        return _entails_batch_via_chat_model(self._llm, claims, grounding)
 
 
 class MlapiSemanticVerifier:
@@ -251,6 +324,9 @@ class MlapiSemanticVerifier:
     def entails(self, claim: str, grounding: str) -> bool | None:
         return _entails_via_chat_model(self._llm, claim, grounding)
 
+    def entails_batch(self, claims: list[str], grounding: str) -> list[bool | None]:
+        return _entails_batch_via_chat_model(self._llm, claims, grounding)
+
 
 # ---- 4단계 라우터 --------------------------------------------------------------
 
@@ -281,9 +357,17 @@ def verify(
     fact_nums = _facts_numbers(facts)
     grounding = f"{_facts_text(facts)}"
 
+    claims = decompose(detail)
+    kinds = [classify(c) for c in claims]
+
+    # semantic claim들은 개별 호출 대신 한 번에 판정한다(claim이 많아도 LLM 호출 1회).
+    sem_positions = [i for i, k in enumerate(kinds) if k == "semantic"]
+    sem_verdicts = _semantic_verdicts(semantic, [claims[i] for i in sem_positions], grounding)
+    sem_map = dict(zip(sem_positions, sem_verdicts))
+
     results: list[ClaimResult] = []
-    for claim in decompose(detail):
-        kind = classify(claim)
+    for i, claim in enumerate(claims):
+        kind = kinds[i]
 
         if kind == "structural_law":
             cited = _law_refs(claim)
@@ -306,7 +390,7 @@ def verify(
             ))
 
         else:  # semantic
-            ent = semantic.entails(claim, grounding)
+            ent = sem_map.get(i)
             results.append(ClaimResult(
                 claim, kind, ent,
                 "" if ent else "규범적 판단 — 근거 함의가 불확실, 사람 확인 필요",

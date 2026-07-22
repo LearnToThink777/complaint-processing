@@ -153,17 +153,28 @@ class CriticLLM(LLMDecorator):
         law, facts = context.get("law"), context.get("facts")
         if law is None and facts is None:
             return None  # 검증할 근거가 context에 없음 → 건너뜀
-        # 검증 대상 텍스트: 판정이면 code+detail, 이중공개면 감독원용 본문,
-        # 재협상 초안이면 감독원용 근거(유사사례 인용이 실제 근거와 맞는지가 관건).
-        if hasattr(result, "detail"):
-            text = f"{getattr(result, 'code', '')} {result.detail}".strip()
-        elif hasattr(result, "supervisor_body"):
-            text = str(result.supervisor_body)
-        elif hasattr(result, "evidence_for_supervisor"):
-            text = str(result.evidence_for_supervisor)
-        else:
-            return None
+        text = self._reviewable_text(result)
+        # 배치 산출물(verdict_batch)은 원소 detail 을 한 덩어리로 합쳐 한 번에 검증한다 →
+        # verify() 안의 claim 검증도 배치(1회)로 처리돼, 항목 수와 무관하게 Critic 호출이 늘지 않는다.
         return verify(text, law=law, facts=facts, semantic=self.semantic) if text else None
+
+    @staticmethod
+    def _reviewable_text(result: BaseModel) -> str:
+        """검증 대상 텍스트 추출. 배치(verdicts/disclosures)면 원소 근거를 이어 붙인다.
+
+        판정이면 code+detail, 이중공개면 감독원용 본문, 재협상이면 감독원용 근거.
+        """
+        if hasattr(result, "verdicts"):  # VerdictBatch — 전 항목 판정을 한 덩어리로
+            return " ".join(f"{v.code} {v.detail}" for v in result.verdicts).strip()
+        if hasattr(result, "disclosures"):  # DisclosureBatch — 감독원용 본문을 이어붙임
+            return " ".join(str(d.supervisor_body) for d in result.disclosures).strip()
+        if hasattr(result, "detail"):
+            return f"{getattr(result, 'code', '')} {result.detail}".strip()
+        if hasattr(result, "supervisor_body"):
+            return str(result.supervisor_body)
+        if hasattr(result, "evidence_for_supervisor"):
+            return str(result.evidence_for_supervisor)
+        return ""
 
     def summary(self) -> dict[str, Any]:
         from collections import Counter
