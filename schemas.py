@@ -90,6 +90,9 @@ class ChecklistItem(BaseModel):
     source: str = Field(description="근거 조문/청크 식별자(vectorDB 조회). 코퍼스에 없으면 law와 동일 문자열.")
 
 
+Track = Literal["legal", "general"]
+
+
 class ChecklistPlan(BaseModel):
     """이관(intake) 시 사건 사실만 보고 '무엇을 검토해야 하는지' 스스로 도출한 계획.
 
@@ -97,14 +100,71 @@ class ChecklistPlan(BaseModel):
     미리 정해두지 않고, 사건 사실을 읽은 뒤(=이관 시점)에야 관련 법령·절차를
     vectorDB에서 찾아 항목을 구성합니다. Claude/Codex에게 질문을 던지면 그때 가서
     관련 근거를 찾아 답하는 것과 같은 순서 — 콘솔의 체크리스트 상수 자리를 대체합니다.
+
+    track: 접수 시 '법률 분쟁(legal)'인지 '비법률 일반 안내·행정 민원(general)'인지 먼저
+    분류(트리아지)한다. general이면 규정 판정·원장 없이 경량 안내 경로로 종결한다 —
+    모든 민원을 법률 처리 파이프라인에 밀어넣지 않는다.
     """
 
     classification: str = Field(
         description="사건 유형 분류 라벨. 민원인의 사실관계 서술을 AI가 읽고 분류한 결과. "
         "예: 'ELS 불완전판매 의심'. 접수 전엔 존재하지 않고, 이 호출 이후 종결까지 고정된다."
     )
-    items: list[ChecklistItem] = Field(default_factory=list, description="이 사건에 필요하다고 판단한 검토 항목들.")
-    reasoning: str = Field(description="사건 사실에서 어떤 쟁점을 읽어 이 항목들을 도출했는지 한두 문장.")
+    track: Track = Field(
+        default="legal",
+        description="처리 트랙. 'legal'=법률 분쟁(규정 판정·원장 처리), "
+        "'general'=비법률 일반 안내·행정 민원(경량 안내로 종결). 사건 사실로 판정.",
+    )
+    items: list[ChecklistItem] = Field(default_factory=list, description="이 사건에 필요하다고 판단한 검토 항목들(general이면 비어도 됨).")
+    reasoning: str = Field(description="사건 사실에서 어떤 쟁점을 읽어 이 항목들을(또는 트랙을) 도출했는지 한두 문장.")
+
+
+class GeneralGuidance(BaseModel):
+    """[LLM #7] 비법률 일반 민원(안내·행정 문의)에 대한 경량 응답.
+
+    법률 분쟁이 아니므로 규정 판정·원장·이중공개 없이 바로 실질 안내로 종결한다.
+    다만 처리 중 법률 분쟁 소지가 보이면 escalation_hint로 정식 민원 전환을 안내한다
+    (트리아지 오분류 안전망). 시중은행 챗봇의 '키워드 매칭 답변'과 달리, 사용자의
+    구체 상황(facts)에 맞춘 절차·셀프처리 가능 여부까지 제시한다.
+    """
+
+    answer: str = Field(description="질문에 대한 직접 답변. 법률어 없이 쉽게.")
+    steps: list[str] = Field(default_factory=list, description="사용자가 밟을 절차(있으면).")
+    self_service: bool = Field(default=False, description="앱/웹에서 사용자가 셀프로 처리 가능한지.")
+    contact: str = Field(default="", description="추가 문의처(고객센터·영업점 등).")
+    escalation_hint: str = Field(
+        default="",
+        description="법률 분쟁 소지가 보이면 정식 민원(분쟁)으로 전환 안내. 아니면 빈 문자열.",
+    )
+
+
+class RightsAction(BaseModel):
+    """소비자가 지금 취할 수 있는 대응 1건."""
+
+    title: str = Field(description="행사할 권리/대응 이름. 예: '위법계약해지권 행사', '분쟁조정 신청'.")
+    basis: str = Field(description="근거 법령/절차. 예: '금융소비자보호법 제47조'.")
+    deadline: str = Field(description="행사 기한/제척기간. 예: '위반 안 날부터 1년 이내'. 없으면 '제한 없음'.")
+    how: str = Field(description="어떻게 하는지 한 줄 절차. 쉬운 말로.")
+
+
+class ConsumerRightsGuide(BaseModel):
+    """[LLM #6] 종결 시 '이 사건 근거로' 만든 소비자 권익 보호 안내.
+
+    일반 FAQ가 아니라 원장(ledger)의 실제 판정에 근거한 개인화 안내다 — 위반이 확인된
+    사안과 무혐의 사안의 안내가 서로 다르다. 챌린지 주제②('대응 절차·권리 보호 방안
+    안내')의 핵심이자, '모두에게 동일 답변'하는 챗봇과 갈리는 지점.
+
+    에이전트는 정보 제공·안내까지만 한다 — 실제 권리 행사 여부는 본인이 결정한다(권한 경계).
+    """
+
+    summary: str = Field(description="이 사건에서 소비자가 놓인 상황 한 줄(쉬운 말, 법률어 최소화).")
+    rights: list[RightsAction] = Field(default_factory=list, description="지금 행사 가능한 권리·대응 목록.")
+    documents: list[str] = Field(default_factory=list, description="대응에 필요한 준비 서류.")
+    escalation: list[str] = Field(default_factory=list, description="확대 경로. 예: '금융감독원 분쟁조정(1332)', '소액사건심판'.")
+    disclaimer: str = Field(
+        default="일반적 정보 제공이며 법률 자문이 아닙니다. 최종 판단·행사는 본인이 결정합니다.",
+        description="자문 아님 고지문(권한 경계).",
+    )
 
 
 class ChunkLabels(BaseModel):

@@ -3,3 +3,9 @@ langchain-google-genai>=2,<3
 langchain-groq>=1,<2
 langchain-openai>=1.4,<2
 python-dotenv>=1,<2
+# 로컬 임베딩(default_local_embed_fn) — API 쿼터 없이 corpus_index.json 벡터 검색 색인 생성.
+sentence-transformers>=3,<6
+# 웹 API 계층(api.py) — FastAPI + Swagger(/docs). uvicorn 은 ASGI 서버, httpx 는 TestClient 의존.
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+httpx>=0.27,<1

@@ -50,5 +50,5 @@
 `frames.json`과 골든 테스트를 `today=2026-07-15`로 고정했다.
 
 ## 테스트
-`pytest complaint_processing/tests` → 8건(골든/중재 4 + critic 4).
+`pytest complaint_processing/tests` → **16건**(골든/중재/critic/api). Critic 관련은 `tests/test_critic.py`.
 `python complaint_processing/run.py --critic` → 실행 + 검증 요약 출력.

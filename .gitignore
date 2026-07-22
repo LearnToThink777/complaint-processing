@@ -15,6 +15,10 @@ venv/
 # law.go.kr 수집 캐시·색인 체크포인트 (collect_corpus.py / build_index.py 산출물 — 재현 가능)
 data/
 
+# 프론트엔드(Vite/React) — 의존성은 커밋하지 않는다. 빌드 산출물(ui/)은 시연 편의를 위해 커밋 유지.
+frontend/node_modules/
+frontend/.vite/
+
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
 

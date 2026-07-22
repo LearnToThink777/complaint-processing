@@ -1,0 +1,21 @@
+{
+  "name": "complaint-processing-ui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "금융 민원 처리 프론트엔드 — 직원 대시보드 + 민원인 앱 (기존 FastAPI 백엔드 시각화)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.8"
+  }
+}

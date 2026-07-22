@@ -16,6 +16,25 @@
 | 2 | **이중 공개** | `PLAINU` + `discloseR` | 판정 → `DualDisclosure`(민원인용/감독원용) |
 | 3 | **유사사례 검색 + 완료일 추정** | `s.vector` + 위험 배너 | 사건 유형 → `SimilarCasesResult` |
 | 4 | **재협상 재료 초안** | `negoText` + 협상 공개문 | 발목잡는 항목 → `RenegotiationDraft` |
+| 6 | **소비자 권익 보호 안내** | (신규 · 콘솔에 없음) | 종결 원장 → `ConsumerRightsGuide`(행사 가능 권리·절차·기한·확대경로) |
+| 7 | **비법률 일반 민원 트리아지** | (신규 · 콘솔에 없음) | 사건 사실 → `ChecklistPlan.track`(legal/general) → general이면 `GeneralGuidance` |
+
+> 전체 스킬 레퍼런스(입출력 스키마·프롬프트·예시)는 [`docs/SKILLS.md`](docs/SKILLS.md),
+> 아키텍처·데이터 플로우는 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 참고.
+
+> #6(소비자 권익 보호 안내): 종결 시 **이 사건의 실제 원장(판정)에 근거해** 소비자가 지금
+> 행사할 수 있는 권리·대응 절차·기한·준비 서류·확대 경로(금감원 분쟁조정·소액소송)를
+> 개인화해 안내합니다. 일반 FAQ가 아니라 사건별로 달라지는 안내라는 점이 시중은행 챗봇과
+> 갈리는 지점입니다(위반 사안 vs 무혐의 사안의 안내가 다름). 챌린지 주제②('대응 절차·권리
+> 보호 방안 안내')에 대응하며, 에이전트는 **안내까지만** 하고 권리 행사는 본인이 결정합니다.
+> 프로젝트 차별점 정리는 [`docs/DIFFERENTIATION.md`](docs/DIFFERENTIATION.md) 참고.
+
+> #7(비법률 일반 민원 트리아지): 접수(#0) 시 사건을 **법률 분쟁(legal) / 비법률 안내·행정
+> 민원(general)** 으로 먼저 분류합니다. general이면 규정 판정·원장 처리를 건너뛰고 사용자
+> 상황에 맞춘 실질 안내(`GeneralGuidance`)로 바로 종결합니다 — 모든 민원을 법률 파이프라인에
+> 밀어넣지 않습니다. 오분류 안전망으로, 안내 중 법률 소지가 보이면 `escalation_hint`로 정식
+> 민원 전환을 안내합니다. 트랙 판정은 `tasks.py::classify_track`(오프라인 키워드 근사) /
+> 실제 LLM 프롬프트가 담당합니다.
 
 > #0(검토 계획 수립): 접수 전엔 어떤 민원이 들어올지 모르므로, **검토 항목 목록
 > 자체를 미리 정해두지 않습니다.** `ComplaintAgent`는 생성 시점에 체크리스트가
@@ -30,6 +49,18 @@ LLM이 **아닌** 부분: 사건 생성·이력 개시·원장 append·상태 �
 
 핵심 설계 포인트 — **에이전트는 자문·중재만** 합니다. 재협상(#4)에서 새 기한은
 `recommended_new_due_date`로 *권고*만 하고, 확정은 사람(민원인·감독원)이 합니다.
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [`CHANGELOG.md`](CHANGELOG.md) | 변경 기록 — 작업 재개용 단일 복원 지점 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 아키텍처 개요 + 데이터 플로우(mermaid) |
+| [`docs/SKILLS.md`](docs/SKILLS.md) | LLM 스킬 레퍼런스 #0~#7(입출력·프롬프트·예시) |
+| [`docs/DIFFERENTIATION.md`](docs/DIFFERENTIATION.md) | 챌린지 주제 대비 차별점 정리 |
+| [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | 챌린지 제출 문서(개요·데모 시나리오) |
+| [`docs/refactoring/`](docs/refactoring/README.md) | GoF 패턴 리팩토링 기록 |
+| [`docs/critic-verification.md`](docs/critic-verification.md) | 출력 검증(Critic) 설계 |
 
 ## 구조
 
@@ -57,6 +88,71 @@ python run.py --json frames.json           # 콘솔 호환 JSON 저장
 cd C:\Users\alstj\Downloads
 python -m complaint_processing.run
 ```
+
+## 웹 API (FastAPI + Swagger)
+
+콘솔이 정적 `frames.json`을 `fetch`하던 구조를, **HTTP API로 노출**했습니다.
+`api.py`는 기존 계약(`agent.py`/`schemas.py`/`llm.py`)을 안 건드리고 얇은 어댑터로 얹은
+것이라, `facade.run_complaint_case()`와 `llm.get_backend().structured()`를 그대로 재사용합니다.
+스키마가 곧 Pydantic 계약이므로 **Swagger 문서는 자동 생성**됩니다.
+
+```bash
+cd C:\Users\alstj\Downloads
+pip install -r complaint_processing/requirements.txt
+uvicorn complaint_processing.api:app --reload   # http://127.0.0.1:8000
+```
+
+| 문서/UI | 경로 |
+|---|---|
+| Swagger UI | `/docs` |
+| ReDoc | `/redoc` |
+| OpenAPI 스펙(JSON) | `/openapi.json` |
+
+엔드포인트(태그별):
+
+| 메서드 · 경로 | 태그 | 반환(스키마) |
+|---|---|---|
+| `POST /api/cases/run` | pipeline | 프레임 전체 + 관측/검증 요약 |
+| `GET /api/frames` | pipeline | 프레임 배열(골든과 동일 설정: 더미 + 색인 + `today=2026-07-15`) |
+| `GET /api/mediation` | mediation | 중재 기록 배열(`MediationRecord[]`) |
+| `POST /api/skills/checklist-plan` | skills | `ChecklistPlan` (#0) |
+| `POST /api/skills/verdict` | skills | `RegulatoryVerdict` (#1) |
+| `POST /api/skills/disclosure` | skills | `DualDisclosure` (#2) |
+| `POST /api/skills/similar-cases` | skills | `SimilarCasesResult` (#3) |
+| `POST /api/skills/renegotiation` | skills | `RenegotiationDraft` (#4) |
+| `POST /api/skills/rights-guide` | skills | `ConsumerRightsGuide` (#6 · 소비자 권익 보호 안내) |
+| `POST /api/skills/general-guidance` | skills | `GeneralGuidance` (#7 · 비법률 일반 민원 안내) |
+
+`GET /api/frames?case=general` 로 비법률 일반 민원(general 트랙) 트리아지 데모도 볼 수 있습니다
+(viewer.html 상단 **⚖ 법률 민원 / 🧭 일반 민원** 토글).
+
+각 요청 body의 `options`(`use_llm`/`provider`/`retrieval`/`critic`)가 `get_backend`로 그대로
+흘러갑니다. 기본은 오프라인 더미라 키·네트워크 없이 즉시 응답합니다.
+
+**프론트엔드 — API 우선 + 정적 폴백**: FastAPI가 `viewer.html`·`mediation.html`도 같은
+오리진에서 서빙합니다(맨 끝 `StaticFiles` 마운트). 두 HTML은 먼저 `/api/frames`·`/api/mediation`을
+부르고, 실패하면 기존 정적 `frames.json`·`mediation.json`으로 폴백합니다 — 서버 위(`/viewer.html`)
+든 `file://`로 열든 둘 다 동작합니다. Docker(`Dockerfile`)도 `http.server` 대신 uvicorn으로
+API와 정적 프론트를 한 서버에서 서빙하도록 바꿨습니다.
+
+## 테스트
+
+```bash
+cd C:\Users\alstj\Downloads
+pip install -r complaint_processing/requirements.txt   # fastapi/httpx 포함 (API 테스트에 필요)
+pytest complaint_processing/tests                       # 16 passed
+```
+
+| 테스트 파일 | 검증 |
+|---|---|
+| `tests/test_golden_frames.py` | 프레임 재생성 == 골든 `frames.json`(리팩토링 안전망) |
+| `tests/test_mediation.py` | `mediation.json` 불변식(스키마·seq·refs) |
+| `tests/test_critic.py` | Critic 라우터 + `CriticLLM` PASS/BLOCK 불변식 |
+| `tests/test_api.py` | FastAPI `TestClient` 스모크 + `/api/frames`==골든 + #6/#7 개인화·트랙 |
+
+> 골든(`frames.json`)은 **MockLLM 결정론**으로 생성되므로 API 키가 필요 없습니다. 파이프라인에
+> 단계를 추가/변경하면 골든을 재생성해야 합니다:
+> `python -c "import json,pathlib; from complaint_processing.tests.test_golden_frames import regenerate_frames; pathlib.Path('complaint_processing/frames.json').write_text(json.dumps(regenerate_frames(),ensure_ascii=False,indent=2),encoding='utf-8')"`
 
 ## 더미 → 실제 LLM 교체
 

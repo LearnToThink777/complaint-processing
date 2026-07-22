@@ -353,9 +353,12 @@ function preselect(){
   if(s!==null && !isNaN(+s) && +s>=0 && +s<DATA.length){ si=+s; }
 }
 
-fetch('mediation.json').then(r=>r.json()).then(d=>{
-  DATA=d; preselect(); step=DATA[si].log.length-1; render();   // 기본은 전체(종결) 상태, ▶로 처음부터 등장 재생
-}).catch(e=>{ document.body.innerHTML='<div class="wrap">mediation.json 로드 실패: '+e+'</div>'; });
+// 라이브 API(/api/mediation)를 먼저, 실패하면 정적 mediation.json으로 폴백.
+fetch('/api/mediation').then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); })
+  .catch(()=>fetch('mediation.json').then(r=>r.json()))
+  .then(d=>{
+    DATA=d; preselect(); step=DATA[si].log.length-1; render();   // 기본은 전체(종결) 상태, ▶로 처음부터 등장 재생
+  }).catch(e=>{ document.body.innerHTML='<div class="wrap">중재 기록 로드 실패: '+e+'</div>'; });
 </script>
 </body>
 </html>

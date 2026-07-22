@@ -1,0 +1,453 @@
+/* ============ 직원 데스크탑 대시보드 레이아웃 ============ */
+.staff-root {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* ---- 사이드바 (전체 폭의 약 16%) ---- */
+.staff-sidebar {
+  width: 236px;
+  flex: none;
+  background: var(--navy-900);
+  color: #cdd8e8;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 14px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.staff-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 6px 8px 18px;
+  text-align: left;
+}
+.staff-brand-logo {
+  font-size: 22px;
+}
+.staff-brand-text {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.staff-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.staff-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  color: #9fb0c9;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.12s;
+}
+.staff-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #eaf0f8;
+}
+.staff-nav-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+.staff-nav-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+.staff-user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.staff-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex: none;
+}
+.staff-user-meta {
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+}
+.staff-user-meta strong {
+  color: #fff;
+  font-size: 13.5px;
+}
+.staff-user-meta span {
+  color: #7d90ac;
+}
+
+/* ---- 메인 콘텐츠 ---- */
+.staff-main {
+  flex: 1;
+  min-width: 0;
+  padding: 28px 34px 48px;
+  overflow-x: hidden;
+}
+.page-head {
+  margin-bottom: 22px;
+}
+.page-head h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+.page-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* ---- 요약 카드 그리드 (홈) ---- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+@media (max-width: 1100px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.stat-card {
+  padding: 18px 20px;
+}
+.stat-card .stat-label {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stat-card .stat-value {
+  font-size: 30px;
+  font-weight: 800;
+  margin-top: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.stat-card .stat-value .unit {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.stat-card .stat-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ---- 2단 그리드(처리현황 등) ---- */
+.split {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1120px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+.panel-pad {
+  padding: 18px 20px;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.link-more {
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- 원장 행(처리현황) ---- */
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.ledger-row:last-child {
+  border-bottom: none;
+}
+.ledger-item {
+  flex: 1;
+  min-width: 0;
+}
+.ledger-item .li-name {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.ledger-item .li-code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 6px;
+  margin-top: 4px;
+  display: inline-block;
+}
+.ledger-verdict {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+  min-width: 96px;
+  text-align: right;
+}
+
+/* ---- 유사사례 카드 ---- */
+.sim-card {
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.sim-card:last-child {
+  margin-bottom: 0;
+}
+.sim-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.sim-id {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.sim-title {
+  font-size: 13px;
+  color: var(--fg-2);
+}
+.sim-foot {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+/* ---- 체크리스트(사건접수) ---- */
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.checklist-item:last-child {
+  border-bottom: none;
+}
+.check-box {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-strong);
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: 12px;
+}
+.check-box.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.check-item-name {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.law-tag {
+  font-size: 11px;
+  color: var(--fg-2);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+/* ---- 파일 첨부 행 ---- */
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.file-icon {
+  font-size: 18px;
+}
+.file-meta {
+  flex: 1;
+  min-width: 0;
+}
+.file-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.file-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---- 마이페이지 ---- */
+.kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.kv:last-child {
+  border-bottom: none;
+}
+.kv .k {
+  color: var(--muted);
+}
+.kv .v {
+  font-weight: 600;
+}
+.noti-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+.noti-row:last-child {
+  border-bottom: none;
+}
+.noti-label {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.noti-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ---- 라이브(실제 LLM) 실행 컨트롤 ---- */
+.live-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.live-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- 이중 공개 박스 ---- */
+.disc-box {
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+}
+.disc-box.r {
+  border-left-color: #8957e5;
+}
+.disc-box .disc-h {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--fg-2);
+  margin-bottom: 4px;
+}
+.disc-box .disc-b {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 상단 케이스 헤더(처리현황) */
+.case-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.case-head .case-id {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 16px;
+}
+.chip-select {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--panel);
+  color: var(--fg);
+}

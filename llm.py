@@ -346,14 +346,16 @@ class RetrievalLLM(LLMBackend):
         # 색인에 사전계산 임베딩이 있으면 EmbeddingScorer 로 검색(질의 임베딩 1회만 발생).
         # 임베딩 클라이언트 생성 실패(키 없음 등) 시엔 기존 어휘 겹침(Jaccard)으로 폴백 —
         # 임베딩 없는 기존 색인은 이 분기 자체를 타지 않아 동작이 100% 동일하다.
+        # 질의 임베딩은 반드시 색인을 만든 것과 같은 모델이어야 한다(벡터 공간 불일치 방지) —
+        # corpus_index.json 은 default_local_embed_fn(로컬, e5-base)으로 색인했다.
         scorer = None
         if any(c.embedding for c in chunks):
             try:
-                from .retrieval import default_gemini_embed_fn
+                from .retrieval import default_local_embed_fn
 
                 # eager 생성 — EmbeddingScorer 기본은 지연 생성이라 키 부재가 검색
                 # 시점에야 터진다. 여기서 미리 만들어봐야 폴백 분기가 의미 있다.
-                scorer = EmbeddingScorer(embed_fn=default_gemini_embed_fn())
+                scorer = EmbeddingScorer(embed_fn=default_local_embed_fn())
             except Exception:
                 scorer = None
         self._store = VectorStore(chunks, scorer=scorer)
@@ -372,6 +374,17 @@ class RetrievalLLM(LLMBackend):
             # 실제로 찾아낸다. 항목 자체가 사전에 정해져 있지 않다 — 사실을 읽은
             # 뒤에야 몇 건이, 무엇이 나올지 결정된다.
             facts = context.get("facts", "")
+            # 트리아지 먼저: 비법률 일반 민원이면 법령 검색 자체를 건너뛰고 general 트랙으로.
+            from .tasks import classify_track
+
+            if classify_track(facts) == "general":
+                payload = {
+                    "classification": f"{context.get('product_en', '일반 문의')} · 일반 안내",
+                    "track": "general",
+                    "items": [],
+                    "reasoning": "사건 사실에 법률 분쟁 신호가 없어 법령 검색 없이 일반 안내 트랙으로 분류했습니다.",
+                }
+                return schema.model_validate(payload)
             hits = self._store.search(facts, source_type="statute", k=len(self._store.chunks))
             items = []
             for _, c in hits:
@@ -385,6 +398,7 @@ class RetrievalLLM(LLMBackend):
             product_en = context.get("product_en", "")
             payload = {
                 "classification": f"{product_en} 의심" + (f" ({sector} 권역)" if sector else ""),
+                "track": "legal",
                 "items": items,
                 "reasoning": (
                     f"사건 사실을 코퍼스({len(self._store.chunks)}청크)에 질의해 관련 법령 "
@@ -450,7 +464,13 @@ def get_backend(
     today 를 주면 유사사례 예상 완료일 계산의 기준일을 고정한다(미지정 시 실제 date.today()).
     """
 
-    _REAL_BACKENDS = {"groq": GroqLLM, "gemini": GeminiLLM, "mlapi": MlapiLLM, "proxy": ProxyLLM}
+    _REAL_BACKENDS = {
+        "groq": GroqLLM,
+        "gemini": GeminiLLM,
+        "mlapi": MlapiLLM,  # 기본 gpt-5-nano(MLAPI_NANO_BASE_URL)
+        "mlapi-mini": lambda: MlapiLLM(model="openai/gpt-5-mini", base_url_env="MLAPI_BASE_URL"),
+        "proxy": ProxyLLM,
+    }
     if use_llm:
         base: LLMBackend = _REAL_BACKENDS.get(provider, ProxyLLM)()
     else:
@@ -465,11 +485,11 @@ def get_backend(
     if critic:
         # 실제 LLM(groq/gemini/mlapi) 모드면 Critic의 semantic 검증도 같은 provider로. 그 외엔 기본(어휘겹침).
         semantic = None
-        if use_llm and provider in ("groq", "gemini", "mlapi"):
+        if use_llm and provider in ("groq", "gemini", "mlapi", "mlapi-mini"):
             from .critic import GroqSemanticVerifier, GeminiSemanticVerifier, MlapiSemanticVerifier
 
             _VERIFIERS = {"groq": GroqSemanticVerifier, "gemini": GeminiSemanticVerifier, "mlapi": MlapiSemanticVerifier}
-            semantic = _VERIFIERS[provider]()
+            semantic = _VERIFIERS["mlapi" if provider.startswith("mlapi") else provider]()
         backend = CriticLLM(backend, enforce=critic_enforce, semantic=semantic)  # 출력을 근거에 대조
     if cache:
         backend = CachingLLM(backend)

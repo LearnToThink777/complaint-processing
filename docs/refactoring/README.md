@@ -4,6 +4,11 @@ AgentOps 적용 전, 확장(진짜 벡터DB·진짜 LLM)과 협업을 위해 코
 디자인 패턴으로 정돈한 과정. 모든 단계는 **겉보기 동작 불변**을 원칙으로 하며, 골든 테스트
 (`complaint_processing/tests`)로 매 단계 검증했다.
 
+> **참고(현재 상태)**: 아래 phase 문서의 "골든 테스트 4건"은 각 **리팩토링 당시** 수치입니다.
+> 이후 웹 API(FastAPI+Swagger)·소비자 권익 보호 안내(#6)·비법률 민원 트리아지(#7)가 추가돼
+> **현재 테스트는 16건**입니다 — 전체 변경 이력은 [CHANGELOG](../../CHANGELOG.md), 아키텍처는
+> [ARCHITECTURE](../ARCHITECTURE.md) 참조.
+
 ## 단계별 기록
 | Phase | 문서 | 적용 패턴 |
 | --- | --- | --- |
@@ -41,7 +46,7 @@ AgentOps 적용 전, 확장(진짜 벡터DB·진짜 LLM)과 협업을 위해 코
 
 ## 테스트
 ```
-pytest complaint_processing/tests        # 골든 프레임 + 중재 데이터 불변식 (4건)
+pytest complaint_processing/tests        # 골든/중재/critic/api 불변식 (현재 16건)
 python complaint_processing/run.py --retrieval corpus_index.json   # 실행 + 관측 요약
 ```
 
@@ -55,4 +60,6 @@ decorators.py    데코레이터 (관측/재시도/캐시) = AgentOps 이음새
 retrieval.py     전략(ScorerStrategy) + VectorStore
 presentation.py  옵서버(FramePresenter)
 facade.py        퍼사드(run_complaint_case)
+critic.py        출력 검증(Critic) 라우터 + 의미 검증자 (할루시네이션 대조)
+api.py           웹 API (FastAPI + Swagger) — 파이프라인/스킬 HTTP 노출 (리팩토링 이후 추가)
 ```

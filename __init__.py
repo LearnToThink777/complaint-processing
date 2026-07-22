@@ -4,7 +4,9 @@ from .agent import ComplaintAgent
 from .llm import MockLLM, ProxyLLM, get_backend
 from .schemas import (
     ComplaintCase,
+    ConsumerRightsGuide,
     DualDisclosure,
+    GeneralGuidance,
     RegulatoryVerdict,
     RenegotiationDraft,
     SimilarCasesResult,
@@ -16,7 +18,9 @@ __all__ = [
     "ProxyLLM",
     "get_backend",
     "ComplaintCase",
+    "ConsumerRightsGuide",
     "DualDisclosure",
+    "GeneralGuidance",
     "RegulatoryVerdict",
     "RenegotiationDraft",
     "SimilarCasesResult",

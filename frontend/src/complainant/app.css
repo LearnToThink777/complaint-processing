@@ -1,0 +1,560 @@
+/* ============ 민원인 모바일 앱 (폰 프레임 안에 렌더) ============ */
+.cx-stage {
+  min-height: 100vh;
+  background: radial-gradient(900px 500px at 50% -5%, #1d3b63 0%, #0d1b2e 60%);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.cx-phone {
+  width: 390px;
+  max-width: 100%;
+  height: 780px;
+  max-height: calc(100vh - 48px);
+  background: #eef1f6;
+  border-radius: 34px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 8px solid #0b1420;
+}
+.cx-statusbar {
+  height: 40px;
+  flex: none;
+  background: #0d1b2e;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cx-exit {
+  font-size: 11px;
+  color: #9fb2cc;
+  cursor: pointer;
+}
+.cx-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.cx-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+/* ---- 하단 탭바 ---- */
+.cx-tabbar {
+  flex: none;
+  height: 64px;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  display: flex;
+  padding-bottom: 4px;
+}
+.cx-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.cx-tab-icon {
+  font-size: 19px;
+  filter: grayscale(1) opacity(0.55);
+}
+.cx-tab.active {
+  color: var(--navy);
+}
+.cx-tab.active .cx-tab-icon {
+  filter: none;
+}
+
+/* ---- 공통 페이지 패딩 ---- */
+.cx-page {
+  padding: 18px 16px 24px;
+}
+.cx-page-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 4px 2px 16px;
+}
+.cx-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 4px;
+}
+.cx-topbar h1 {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+}
+
+/* ---- 히어로 인사 카드(홈) ---- */
+.cx-hero {
+  margin: 14px 16px 0;
+  border-radius: 18px;
+  padding: 20px;
+  color: #fff;
+  background: linear-gradient(135deg, #1d3b63, #0d1b2e);
+  position: relative;
+  overflow: hidden;
+}
+.cx-hero .wave {
+  font-size: 20px;
+}
+.cx-hero h2 {
+  margin: 6px 0 4px;
+  font-size: 21px;
+  font-weight: 800;
+}
+.cx-hero p {
+  margin: 0;
+  color: #b9c9e0;
+  font-size: 13px;
+}
+.cx-hero .mascot {
+  position: absolute;
+  right: 16px;
+  bottom: 8px;
+  font-size: 46px;
+  opacity: 0.9;
+}
+
+/* ---- 섹션 헤더 ---- */
+.cx-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 22px 18px 10px;
+}
+.cx-section h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.cx-section .more {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- 카드 ---- */
+.cx-card {
+  margin: 0 16px 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+.cx-progress-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cx-case-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cx-case-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  flex: none;
+}
+.cx-case-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.cx-case-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* D-day 배지 */
+.cx-dday {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+/* 안내 리스트 */
+.cx-notice {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 0 16px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.cx-notice-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  flex: none;
+}
+.cx-notice .n-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  display: flex;
+  justify-content: space-between;
+}
+.cx-notice .n-at {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.cx-notice .n-body {
+  font-size: 12.5px;
+  color: var(--fg-2);
+  margin-top: 3px;
+}
+
+/* ---- 폼(민원접수) ---- */
+.cx-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  margin: 18px 18px 8px;
+}
+.cx-label .sub {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 12px;
+  display: block;
+  margin-top: 2px;
+}
+.cx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 16px;
+}
+.cx-chip {
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  color: var(--fg-2);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cx-chip.on {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+.cx-textarea {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  min-height: 120px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 13px;
+  font-family: inherit;
+  font-size: 13.5px;
+  resize: none;
+}
+.cx-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.cx-count {
+  text-align: right;
+  margin: 4px 18px 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.cx-dropzone {
+  margin: 0 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: 12px;
+  padding: 22px;
+  text-align: center;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--panel-2);
+}
+.cx-submit {
+  margin: 22px 16px 8px;
+}
+.cx-select {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 13px;
+  font-family: inherit;
+  font-size: 13.5px;
+  background: #fff;
+  color: var(--muted);
+}
+
+/* ---- 진행현황 타임라인 ---- */
+.cx-dday-banner {
+  margin: 14px 16px 0;
+  background: var(--warn-bg);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.cx-dday-banner .icon {
+  font-size: 26px;
+}
+.cx-dday-banner .label {
+  font-size: 12.5px;
+  color: #8a5a08;
+  font-weight: 600;
+}
+.cx-dday-banner .big {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--warn);
+  line-height: 1;
+  margin-top: 2px;
+}
+.cx-timeline {
+  margin: 20px 20px 0;
+  position: relative;
+}
+.cx-step {
+  display: flex;
+  gap: 14px;
+  padding-bottom: 22px;
+  position: relative;
+}
+.cx-step:last-child {
+  padding-bottom: 0;
+}
+.cx-step::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 28px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+}
+.cx-step:last-child::before {
+  display: none;
+}
+.cx-step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: #e6eaf1;
+  color: var(--muted);
+  z-index: 1;
+}
+.cx-step.done .cx-step-dot {
+  background: var(--navy);
+  color: #fff;
+}
+.cx-step.current .cx-step-dot {
+  background: var(--good);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--good-bg);
+}
+.cx-step-body {
+  flex: 1;
+  padding-top: 2px;
+}
+.cx-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cx-step-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.cx-step-date {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.cx-step.current .cx-step-title {
+  color: var(--good);
+}
+.cx-step-desc {
+  font-size: 12.5px;
+  color: var(--fg-2);
+  margin-top: 6px;
+  background: var(--panel-2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  line-height: 1.55;
+}
+.cx-step.current .cx-step-desc {
+  background: var(--good-bg);
+  color: #1a6b39;
+}
+.cx-step.pending .cx-step-title,
+.cx-step.pending .cx-step-desc {
+  color: var(--muted);
+}
+
+/* ---- 이력 탭 ---- */
+.cx-filter {
+  display: flex;
+  gap: 8px;
+  margin: 4px 16px 14px;
+}
+.cx-filter button {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--fg-2);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.cx-filter button.on {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+.cx-hist-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.cx-hist-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  flex: none;
+}
+
+/* ---- 마이페이지 ---- */
+.cx-profile {
+  margin: 14px 16px 0;
+  background: linear-gradient(135deg, #1d3b63, #0d1b2e);
+  border-radius: 18px;
+  padding: 20px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.cx-profile .avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  flex: none;
+}
+.cx-profile .p-name {
+  font-size: 18px;
+  font-weight: 800;
+}
+.cx-profile .p-email {
+  font-size: 12.5px;
+  color: #b9c9e0;
+  margin-top: 2px;
+}
+.cx-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  background: rgba(22, 163, 74, 0.25);
+  color: #b6f0c8;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.cx-noti {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cx-noti:last-child {
+  border-bottom: none;
+}
+.cx-noti .n-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  flex: none;
+}
+.cx-noti .n-main {
+  flex: 1;
+}
+.cx-noti .n-l {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.cx-noti .n-h {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.cx-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  margin: 0 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.cx-menu-row .arrow {
+  margin-left: auto;
+  color: var(--muted);
+}
+.cx-menu-row .m-ico {
+  font-size: 17px;
+}

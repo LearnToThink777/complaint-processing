@@ -22,6 +22,31 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+# 트리아지 키워드 휴리스틱 — 더미(MockLLM)·검색(RetrievalLLM)이 공유한다.
+# 실제 LLM은 프롬프트(_prompt_checklist_plan)로 더 정교하게 판정하고, 오프라인 모드에서는
+# 이 키워드 겹침으로 근사한다(임베딩 없이 결정론적). 애매하면 법률(legal)로 — 안전측.
+_LEGAL_SIGNALS = (
+    "불완전판매", "손실", "손해", "배상", "위반", "설명의무", "적합성", "부당", "피해",
+    "분쟁", "사기", "보이스피싱", "약관", "환불 거부", "손실보전", "미이행", "하자", "위법",
+)
+_GENERAL_SIGNALS = (
+    "조회", "발급", "재발급", "변경", "한도", "비밀번호", "이체", "가입 방법", "절차", "문의",
+    "영업시간", "위치", "앱 오류", "로그인", "명세서", "해지 방법", "수수료 안내",
+)
+
+
+def classify_track(facts: str) -> str:
+    """사건 사실로 처리 트랙을 판정 — 'legal'(법률 분쟁) 또는 'general'(일반 안내).
+
+    법률 신호와 일반 신호 출현 수를 세어 더 많은 쪽으로. 동수·둘 다 0이면 legal(안전측: 법률
+    분쟁을 일반 안내로 흘려보내지 않는다). 실제 LLM 모드는 프롬프트로 판정하므로 여기 안 탄다.
+    """
+    text = facts or ""
+    legal = sum(1 for s in _LEGAL_SIGNALS if s in text)
+    general = sum(1 for s in _GENERAL_SIGNALS if s in text)
+    return "general" if general > legal else "legal"
+
+
 # (context, fixtures) -> payload dict. 더미(MockLLM)가 스키마에 넣을 값을 조립하는 함수.
 MockBuilder = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
@@ -110,12 +135,47 @@ def _mock_closing_disclosure(context: dict[str, Any], fx: dict[str, Any]) -> dic
 def _mock_checklist_plan(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
     # 더미는 실제 검색 없이 fixtures의 데모 항목을 '이 사건에서 도출한 것처럼' 되돌린다
     # (사실을 읽어 코퍼스를 검색하는 버전은 RetrievalLLM).
+    facts = context.get("facts", "")
+    track = classify_track(facts)
+    if track == "general":
+        # 비법률 일반 민원 — 검토 항목(법령 대조) 자체가 필요 없다. 트랙만 정하고 항목은 비운다.
+        return {
+            "classification": f"{context.get('product_en', '일반 문의')} · 일반 안내",
+            "track": "general",
+            "items": [],
+            "reasoning": "사건 사실에 법률 분쟁 신호가 없고 안내·행정 문의 신호가 우세해 일반 안내 트랙으로 분류했습니다.",
+        }
     items = fx["checklist"]
     return {
         "classification": f"{fx['case']['product']} 의심",
+        "track": "legal",
         "items": [{"item": c["item"], "law": c["law"], "source": c["law"]} for c in items],
         "reasoning": "사건 사실에서 쟁점 키워드를 추출해 유형을 분류하고 관련 법령·절차 항목을 구성했습니다.",
     }
+
+
+def _mock_general_guidance(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
+    # 일반 안내도 미리 못 박아둘 순 없지만, 오프라인 더미는 fixtures의 데모 안내를 돌려준다
+    # (사건별 실질 안내는 실제 LLM이 facts를 읽고 생성).
+    return dict(fx["general_guidance"])
+
+
+def _mock_rights_guide(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
+    # 권익 안내도 종결 문구처럼 미리 못 박아둘 수 없다 — 원장(ledger)에 위반이 쌓였는지에 따라
+    # 안내가 달라진다. 더미는 fixtures의 데모 안내를 기본으로 돌려주되, 원장에 위반/미이행/하자/
+    # 해당이 하나도 없으면(무혐의) 권리·서류 안내를 접고 무혐의 안내로 바꿔 '개인화'를 흉내낸다.
+    base = dict(fx["rights_guide"])
+    ledger = context.get("ledger", [])
+    has_violation = any(l.get("verdict") in ("위반", "미이행", "하자", "해당") for l in ledger)
+    if not has_violation:
+        return {
+            "summary": "검토 결과 규정 위반이 확인되지 않았습니다. 참고하실 일반 대응 경로만 안내드려요.",
+            "rights": [],
+            "documents": [],
+            "escalation": base["escalation"],
+            "disclaimer": base["disclaimer"],
+        }
+    return base
 
 
 def _mock_chunk_label(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
@@ -142,11 +202,25 @@ def _dump(value: Any) -> str:
 
 def _prompt_checklist_plan(ctx: dict[str, Any]) -> str:
     return (
-        "방금 이관받은 사건이다. 사건 유형 분류와 검토 항목 목록 둘 다 아직 정해지지 않았다 — "
-        "사건 사실을 읽고 사건 유형을 분류하고(classification), 어떤 법령·절차 위반 여부를 "
-        "검토해야 하는지 스스로 도출하라. 각 항목의 근거 법령·절차도 함께 밝혀라. "
-        "사실에 없는 근거를 지어내지 않는다.\n\n"
+        "방금 이관받은 사건이다. 먼저 처리 트랙을 판정하라(track): 규정 위반·손해배상 등 "
+        "법률 분쟁이면 'legal', 단순 조회·발급·변경·절차 문의 등 비법률 안내·행정 민원이면 "
+        "'general'. general이면 검토 항목(items)은 비워도 된다. legal이면 사건 유형을 "
+        "분류하고(classification) 어떤 법령·절차 위반 여부를 검토해야 하는지 스스로 도출해 "
+        "각 항목의 근거 법령·절차와 함께 밝혀라. 사실에 없는 근거를 지어내지 않는다. "
+        "애매하면 legal로 둔다(법률 분쟁을 일반 안내로 흘려보내지 않는다).\n\n"
         f"[상품 유형] {ctx.get('product_en', '')}\n"
+        f"[사건 사실]\n{ctx.get('facts', '')}"
+    )
+
+
+def _prompt_general_guidance(ctx: dict[str, Any]) -> str:
+    return (
+        "비법률 일반 민원(안내·행정 문의)이다. 규정 판정 없이, 사용자의 구체 상황에 맞춰 "
+        "실질적으로 답하라 — 직접 답변(answer), 밟을 절차(steps), 앱/웹 셀프처리 가능 여부"
+        "(self_service), 추가 문의처(contact). 만약 사실관계에 규정 위반·피해·손해배상 등 "
+        "법률 분쟁 소지가 보이면 escalation_hint에 정식 민원(분쟁)으로 전환 안내를 적고, "
+        "아니면 빈 문자열로 둬라. 사실에 없는 내용을 지어내지 않는다.\n\n"
+        f"[사건 유형] {ctx.get('classification', '')}\n"
         f"[사건 사실]\n{ctx.get('facts', '')}"
     )
 
@@ -204,6 +278,19 @@ def _prompt_closing_disclosure(ctx: dict[str, Any]) -> str:
     )
 
 
+def _prompt_rights_guide(ctx: dict[str, Any]) -> str:
+    return (
+        "사건이 종결됐다. 아래 원장(ledger)의 실제 판정에 근거해 이 소비자가 지금 행사할 수 있는 "
+        "권리·대응 절차를 안내하라. 일반 FAQ가 아니라 '이 사건'에 맞춘 안내여야 한다 — 위반이 "
+        "확인된 항목이 있으면 그에 맞는 권리(위법계약해지·손해배상·분쟁조정 등)를, 무혐의면 그에 맞게. "
+        "각 권리에는 근거 법령과 행사 기한(제척기간)을 밝히고, 준비 서류와 확대 경로(금감원 "
+        "분쟁조정·소비자원·소액소송)를 정리하라. 사실·근거에 없는 조문·수치는 지어내지 마라. "
+        "너는 정보 제공·안내까지만 한다 — 권리 행사 여부는 본인이 결정한다.\n\n"
+        f"[사건 유형] {ctx.get('classification', '')}\n"
+        f"[적용 법률 원장]\n{_dump(ctx.get('ledger', []))}"
+    )
+
+
 def _prompt_chunk_label(ctx: dict[str, Any]) -> str:
     return (
         "색인 대상 텍스트 조각(법령 조문 또는 분쟁조정 결정문 섹션)을 읽고, 검색이 잘 되도록 "
@@ -227,6 +314,8 @@ _ALL_SPECS: list[TaskSpec] = [
     TaskSpec("similar_cases", _prompt_similar_cases, _mock_similar_cases),
     TaskSpec("renegotiation", _prompt_renegotiation, _mock_renegotiation),
     TaskSpec("closing_disclosure", _prompt_closing_disclosure, _mock_closing_disclosure),
+    TaskSpec("rights_guide", _prompt_rights_guide, _mock_rights_guide),
+    TaskSpec("general_guidance", _prompt_general_guidance, _mock_general_guidance),
     TaskSpec("chunk_label", _prompt_chunk_label, _mock_chunk_label),
 ]
 

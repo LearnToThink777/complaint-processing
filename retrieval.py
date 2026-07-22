@@ -192,17 +192,33 @@ class LexicalScorer(ScorerStrategy):
 # task_type(RETRIEVAL_QUERY / RETRIEVAL_DOCUMENT)을 달리 준다(비대칭 검색 최적화).
 EmbedFn = Callable[[list[str], bool], list[list[float]]]
 
+# 색인·질의가 반드시 같은 차원을 써야 cosine 이 성립한다. 한 곳에서 관리하는 기준 차원.
+# gemini-embedding-001 은 3072차원이 기본이지만 MRL(Matryoshka) 학습이라 앞 N차원만
+# 잘라 써도 품질이 유지된다. 768로 잘라 색인 JSON 비대화를 막는다(3072면 ~4배).
+EMBED_DIMS = 768
+
+
+def _truncate_normalize(vec: list[float], dims: int) -> list[float]:
+    """MRL 임베딩을 앞 dims 차원으로 자르고 L2 정규화한다(자른 뒤엔 재정규화 권장)."""
+    v = vec[:dims]
+    norm = math.sqrt(sum(x * x for x in v)) or 1.0
+    return [x / norm for x in v]
+
 
 def default_gemini_embed_fn(
     model: str = "models/gemini-embedding-001",
     *,
-    dimensions: int | None = None,
+    dimensions: int | None = EMBED_DIMS,
 ) -> EmbedFn:
     """Gemini 임베딩(무료 티어)을 쓰는 기본 EmbedFn 을 만든다.
 
     LLM과 같은 GEMINI_API_KEY 하나를 쓴다(별도 키 불필요). model·dimensions 를 바꾸면
     다른 임베딩으로 튜닝된다. 완전히 다른 제공자로 갈아끼우려면 이 함수 대신 같은
     시그니처(EmbedFn)의 함수를 만들어 EmbeddingScorer 에 주입하면 된다.
+
+    dimensions 를 주면(기본 EMBED_DIMS=768) 반환 벡터를 그 차원으로 맞춘다. langchain
+    버전에 따라 output_dimensionality 요청이 무시되고 3072차원이 그대로 오기도 하므로,
+    받은 뒤 클라이언트에서 한 번 더 잘라(_truncate_normalize) 색인·질의 차원을 보장한다.
     """
     from .llm import _load_gemini_api_key
 
@@ -222,8 +238,36 @@ def default_gemini_embed_fn(
         # langchain 이 질의/문서에 맞는 task_type 을 자동 지정한다
         # (embed_query→RETRIEVAL_QUERY, embed_documents→RETRIEVAL_DOCUMENT).
         if is_query:
-            return [client.embed_query(t) for t in texts]
-        return client.embed_documents(texts)
+            raw = [client.embed_query(t) for t in texts]
+        else:
+            raw = client.embed_documents(texts)
+        # 라이브러리가 output_dimensionality 를 무시해 3072차원을 돌려줘도 여기서 맞춘다.
+        if dimensions is not None:
+            raw = [_truncate_normalize(v, dimensions) for v in raw]
+        return raw
+
+    return embed
+
+
+def default_local_embed_fn(model_name: str = "intfloat/multilingual-e5-base") -> EmbedFn:
+    """API 키·쿼터 없이 로컬에서 도는 임베딩(sentence-transformers). Gemini 429 대안.
+
+    intfloat/multilingual-e5-base: Microsoft 개발, 다국어(한국어 포함) 검색 특화,
+    네이티브 768차원(EMBED_DIMS와 자연히 일치 — 트렁케이션 불필요). E5 계열 관례상
+    질의는 "query: ", 문서는 "passage: " 접두사를 붙여야 검색 품질이 나온다.
+    """
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "sentence-transformers 가 설치돼 있지 않습니다. pip install sentence-transformers 하세요."
+        ) from exc
+    model = SentenceTransformer(model_name)
+
+    def embed(texts: list[str], is_query: bool) -> list[list[float]]:
+        prefix = "query: " if is_query else "passage: "
+        vecs = model.encode([prefix + t for t in texts], normalize_embeddings=True)
+        return [v.tolist() for v in vecs]
 
     return embed
 

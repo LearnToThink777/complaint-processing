@@ -1,0 +1,326 @@
+/* ============================================================
+   금융 민원 처리 시스템 — 디자인 토큰 & 공용 스타일
+   백오피스 톤: 화이트/라이트그레이 배경 + 딥네이비 포인트 + 상태 배지
+   ============================================================ */
+
+:root {
+  /* 브랜드 / 뉴트럴 */
+  --navy-900: #0d1b2e;
+  --navy-800: #10233a;
+  --navy-700: #16304f;
+  --navy-600: #1d3b63;
+  --navy-500: #274b7d;
+  --navy: #1e3a5f;
+  --accent: #2f6fed;
+  --accent-soft: #e8f0fe;
+
+  --bg: #f4f6fa;
+  --panel: #ffffff;
+  --panel-2: #f7f9fc;
+  --border: #e4e8ef;
+  --border-strong: #d3dae4;
+
+  --fg: #1a2436;
+  --fg-2: #45536b;
+  --muted: #8894a8;
+
+  /* 상태 컬러 */
+  --good: #16a34a;
+  --good-bg: #e7f6ec;
+  --warn: #d68910;
+  --warn-bg: #fdf2dc;
+  --bad: #dc2f36;
+  --bad-bg: #fdeaea;
+  --info: #2f6fed;
+  --info-bg: #e8f0fe;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(16, 35, 58, 0.06), 0 2px 8px rgba(16, 35, 58, 0.05);
+  --shadow-lg: 0 8px 30px rgba(16, 35, 58, 0.12);
+
+  --font: "Pretendard", "Segoe UI", "Malgun Gothic", system-ui, -apple-system, sans-serif;
+  --mono: "Consolas", "SF Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ---- 배지 -------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.badge.good {
+  color: var(--good);
+  background: var(--good-bg);
+}
+.badge.warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+.badge.bad {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+.badge.info {
+  color: var(--info);
+  background: var(--info-bg);
+}
+.badge.muted {
+  color: var(--fg-2);
+  background: #eef1f6;
+}
+/* solid 배지(PASS/ESCALATE/BLOCK 처럼 강조) */
+.badge.solid.good {
+  color: #fff;
+  background: var(--good);
+}
+.badge.solid.warn {
+  color: #fff;
+  background: var(--warn);
+}
+.badge.solid.bad {
+  color: #fff;
+  background: var(--bad);
+}
+
+/* ---- 카드/패널 --------------------------------------------- */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+/* ---- 테이블 ------------------------------------------------ */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+.table tbody tr.clickable {
+  cursor: pointer;
+}
+.table tbody tr.clickable:hover {
+  background: var(--panel-2);
+}
+.table tbody tr.selected {
+  background: var(--accent-soft);
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+
+/* ---- 버튼 -------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--fg);
+  border-radius: var(--radius-sm);
+  padding: 9px 16px;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: all 0.12s;
+}
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn.primary {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: var(--navy-700);
+  color: #fff;
+}
+.btn.danger {
+  background: var(--bad-bg);
+  border-color: transparent;
+  color: var(--bad);
+}
+.btn.block {
+  width: 100%;
+}
+
+/* ---- 게이지(일관성 점수) ----------------------------------- */
+.gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.gauge-track {
+  --v: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: conic-gradient(var(--gc, var(--good)) calc(var(--v) * 1%), #edf0f5 0);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.gauge-track::after {
+  content: "";
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--panel);
+  position: absolute;
+}
+.gauge-val {
+  position: relative;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---- 경고 배너 --------------------------------------------- */
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.alert.bad {
+  background: var(--bad-bg);
+  color: #a71c22;
+}
+.alert.warn {
+  background: var(--warn-bg);
+  color: #8a5a08;
+}
+.alert .alert-title {
+  font-weight: 700;
+}
+
+/* ---- 토글 -------------------------------------------------- */
+.toggle {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cfd6e0;
+  border: none;
+  position: relative;
+  transition: background 0.15s;
+  flex: none;
+}
+.toggle.on {
+  background: var(--good);
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.toggle.on::after {
+  transform: translateX(18px);
+}
+
+/* ---- 유틸 -------------------------------------------------- */
+.row {
+  display: flex;
+  align-items: center;
+}
+.between {
+  justify-content: space-between;
+}
+.gap8 {
+  gap: 8px;
+}
+.gap12 {
+  gap: 12px;
+}
+.muted {
+  color: var(--muted);
+}
+.fg2 {
+  color: var(--fg-2);
+}
+.spin {
+  display: grid;
+  place-items: center;
+  height: 60vh;
+  color: var(--muted);
+}

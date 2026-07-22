@@ -17,7 +17,7 @@
   (아직 등장하지 않은 미래 시점을 근거로 인용하던 버그의 재발 방지).
 
 ## 확인
-`pytest complaint_processing/tests` → 4건 통과.
+`pytest complaint_processing/tests` → 4건 통과. *(당시 수치. 이후 critic·api 테스트가 더해져 현재는 16건 — [CHANGELOG](../../CHANGELOG.md) 참조.)*
 
 ## 이후 각 Phase 규칙
 `리팩토링 → pytest 통과 확인 → 이 md 기록 → 커밋` 순서를 반복한다.

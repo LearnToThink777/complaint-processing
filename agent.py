@@ -22,7 +22,9 @@ from .presentation import FramePresenter
 from .schemas import (
     ChecklistPlan,
     ComplaintCase,
+    ConsumerRightsGuide,
     DualDisclosure,
+    GeneralGuidance,
     RegulatoryVerdict,
     RenegotiationDraft,
     SimilarCasesResult,
@@ -30,6 +32,17 @@ from .schemas import (
 
 
 class ComplaintAgent:
+    """민원 처리 오케스트레이터 — "언제 LLM을 부를지"를 아는 상태 기계.
+
+    판정·작문 자체는 LLM(`self.llm.structured`)이 하고, 사건 생성·원장 append·상태 전이·
+    완결성 게이트·프레임 스냅샷은 이 클래스가 결정론적으로 담당한다. 상태가 바뀔 때마다
+    `emit()`으로 옵서버(`FramePresenter`)에 통지해 viewer 프레임을 쌓는다.
+
+    처리 트랙은 접수 시 #0이 판정한다: legal(전체 규정 처리 파이프라인) / general(경량 안내
+    `_run_general`). LLM 호출 지점은 메서드 docstring의 `[LLM #n]` 라벨 참조 — 전체 스킬
+    레퍼런스는 docs/SKILLS.md.
+    """
+
     def __init__(
         self,
         case: ComplaintCase,
@@ -43,12 +56,18 @@ class ComplaintAgent:
         # 접수 전엔 어떤 민원인지 모른다 — 분류·검토 항목 둘 다 이관 시 LLM #0이 채운다.
         # 이관 이후엔 고정: 협상은 기한만 다루지 재분류하지 않는다.
         self.classification: str | None = None
+        # 처리 트랙 — 이관 시 #0이 legal(법률 분쟁)/general(일반 안내)로 판정. 접수 전엔 미정.
+        self.track: str | None = None
+        # general 트랙에서만 채워지는 비법률 일반 안내(#7). legal 트랙에선 None.
+        self.general_guidance: dict[str, Any] | None = None
         self.checklist: list[dict[str, Any]] = []
         self.ledger: list[dict[str, Any]] = []
         self.history: list[dict[str, Any]] = []
         self.discloseU = {"title": "민원인용 안내 / To complainant", "body": "아직 안내가 시작되지 않았습니다."}
         self.discloseR = {"title": "회사·감독원용 리포트 / To supervisor", "body": "—"}
         self.vector: list[dict[str, Any]] | None = None
+        # 종결 시 원장 근거로 만드는 소비자 권익 보호 안내(#6). 종결 전엔 없음.
+        self.rights_guide: dict[str, Any] | None = None
         self.nego_state = "none"
         self.risk = False
         self.due_date: str | None = None
@@ -127,6 +146,30 @@ class ComplaintAgent:
             {"ledger": self.ledger, "checklist": self.checklist},
         )
 
+    def guide_rights(self) -> ConsumerRightsGuide:
+        """[LLM #6] 종결 시 원장(실제 판정)을 근거로 소비자 권익 보호 안내를 생성.
+
+        일반 FAQ가 아니라 이 사건의 원장·분류에 맞춘 개인화 안내다 — 위반이 확인된
+        사안과 무혐의 사안의 안내가 서로 다르다. 에이전트는 안내까지만, 권리 행사는 사람이 결정.
+        """
+        return self.llm.structured(
+            "rights_guide",
+            ConsumerRightsGuide,
+            {"ledger": self.ledger, "classification": self.classification, "facts": self.case.facts},
+        )
+
+    def general_guide(self) -> GeneralGuidance:
+        """[LLM #7] 비법률 일반 민원에 대한 경량 안내. 규정 판정·원장 없이 바로 실질 안내.
+
+        트리아지(#0)가 general로 분류한 사건에서만 호출된다. 법률 분쟁 소지가 보이면
+        escalation_hint로 정식 민원 전환을 안내한다(오분류 안전망).
+        """
+        return self.llm.structured(
+            "general_guidance",
+            GeneralGuidance,
+            {"classification": self.classification, "facts": self.case.facts},
+        )
+
     def draft_renegotiation(self, sim: SimilarCasesResult) -> RenegotiationDraft:
         """[LLM #4] 재협상 재료 초안 — 결정은 사람이, 에이전트는 자문만.
 
@@ -170,18 +213,49 @@ class ComplaintAgent:
         self.discloseU = {"title": disc.complainant_title, "body": disc.complainant_body}
         self.emit(("처리 루프", "Processing loop"), "항목 처리 결과 → ② 원장 반영 · 이중 공개")
 
+    # ---- 경량 경로: 비법률 일반 민원 (트리아지 general) -----------------------
+
+    def _run_general(self) -> list[dict[str, Any]]:
+        """비법률 일반 안내·행정 민원 경로. 규정 판정·원장·이중공개·유사사례 없이
+        바로 실질 안내(#7)를 제공하고 종결한다. run()에서 트랙이 general일 때만 진입.
+
+        (진입 시점엔 이미 pre-intake emit·① 이력·분류·트랙이 정해져 있다.)
+        """
+        self._hist("③", f"사건 사실 분석 → [{self.classification}] · 비법률 일반 안내로 분류(트리아지)", "트리아지 · 트랙 결정")
+        self.discloseR = {"title": "일반 안내 접수 / To supervisor",
+                          "body": f"{self.classification} — 법률 분쟁 아님(일반 안내 트랙). 규정 처리 없이 실질 안내로 종결."}
+        self.discloseU = {"title": "접수 완료 안내 / To complainant",
+                          "body": "문의가 접수되었습니다. 규정 검토가 필요한 분쟁이 아니라, 바로 안내해 드릴게요."}
+        self.emit(("접수·트리아지", "Intake & triage"), "법률 분쟁 아님 → 경량 안내 경로로 분기")
+
+        guide = self.general_guide()  # LLM #7 — 사건 사실에 맞춘 실질 안내
+        self.general_guidance = guide.model_dump()
+        self.status = ("종결", "Closed")
+        self.discloseU = {"title": "안내 / To complainant", "body": guide.answer}
+        esc = f" · 분쟁 전환 안내 있음" if guide.escalation_hint else ""
+        self._hist("①", f"일반 안내 제공 · 종결 (셀프처리 {'가능' if guide.self_service else '일부 필요'}{esc})", "이력 종료")
+        self.emit(("종결", "Closure"), "비법률 일반 안내 제공 · 종결")
+        return self.frames
+
     # ---- 전체 워크플로우 -----------------------------------------------------
 
     def run(self) -> list[dict[str, Any]]:
         # 0) 대기
         self.emit(("시작 전", "Pre-intake"), "사건 접수 전 · 대기")
 
-        # 1) 접수·이관 — 사건 사실을 읽고서야 무엇을 검토할지 정해진다.
+        # 1) 접수·이관 — 사건 사실을 읽고서야 트랙·검토 항목이 정해진다.
         self.status = ("이관됨", "Transferred")
         self._hist("①", "민원 이력 시작 · 사건 생성", "사건 저장소 · 이력 개시")
-        self._hist("②", "적용 법률 원장 초기화 (비어 있음)", "적용 법률 원장")
-        plan = self.plan_checklist()  # LLM #0 — 사건 사실 → 분류 + 검토 항목 도출 + vectorDB 조회
+        plan = self.plan_checklist()  # LLM #0 — 분류 + 트리아지(legal/general) + 검토 항목 도출
         self.classification = plan.classification  # 여기서 딱 한 번 정해지고 종결까지 고정
+        self.track = plan.track
+
+        # 1-a) 트리아지 분기 — 비법률 일반 민원이면 규정 처리 없이 경량 안내로 종결한다.
+        if self.track == "general":
+            return self._run_general()
+
+        # 1-b) 법률 분쟁 트랙 — 규정 판정·원장 처리 (아래 전체 파이프라인)
+        self._hist("②", "적용 법률 원장 초기화 (비어 있음)", "적용 법률 원장")
         self.checklist = [
             {"n": i + 1, "item": it.item, "law": it.law, "source": it.source, "done": False}
             for i, it in enumerate(plan.items)
@@ -239,6 +313,10 @@ class ComplaintAgent:
         close = self.close_disclose()  # LLM #5 — 실제 원장을 읽고서야 결과를 말할 수 있다
         self.discloseU = {"title": close.complainant_title, "body": close.complainant_body}
         self.discloseR = {"title": close.supervisor_title, "body": close.supervisor_body}
-        self.emit(("종결", "Closure"), "원장 기반 결과 재작문 · 소요 기록 사례 DB 적재")
+        # LLM #6 — 원장 근거 소비자 권익 보호 안내(자문·안내까지만, 행사는 본인 결정).
+        guide = self.guide_rights()
+        self.rights_guide = guide.model_dump()
+        self._hist("", f"소비자 권익 보호 안내 생성 — 권리 {len(guide.rights)}건 · 확대경로 {len(guide.escalation)}건", "소비자 권익 안내")
+        self.emit(("종결", "Closure"), "원장 기반 결과 재작문 · 소비자 권익 보호 안내 · 소요 기록 사례 DB 적재")
 
         return self.frames
