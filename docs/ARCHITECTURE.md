@@ -35,7 +35,7 @@ flowchart TD
     CRIT["CriticLLM<br/>(출력 검증)"]
     RET["RetrievalLLM<br/>#0·#3 실검색"]
     MOCK["MockLLM<br/>(fixtures.json)"]
-    REAL["실제 LLM<br/>Gemini·Groq·Mlapi·Proxy"]
+    REAL["실제 LLM<br/>Mlapi(nano/mini)·Proxy"]
   end
   RAGV["retrieval.VectorStore<br/>(corpus_index.json)"]
 

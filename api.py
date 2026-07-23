@@ -69,7 +69,7 @@ class BackendOptions(BaseModel):
     """백엔드 조립 옵션 — llm.get_backend 인자로 그대로 흘러간다."""
 
     use_llm: bool = Field(default=False, description="True면 실제 LLM 호출, False면 오프라인 더미(MockLLM).")
-    provider: str = Field(default="mlapi", description="실제 LLM provider: mlapi/groq/gemini/proxy.")
+    provider: str = Field(default="mlapi-nano", description="실제 LLM provider: mlapi-nano/mlapi-mini/proxy.")
     retrieval: bool = Field(default=False, description="True면 corpus_index.json 으로 #0/#3을 실검색.")
     critic: bool = Field(default=False, description="True면 출력 검증(Critic)을 근거에 대조.")
 
@@ -342,7 +342,7 @@ class MediationStartRequest(BaseModel):
 
     scenario_id: str | None = Field(default=None, description="시나리오 case_id. 미지정이면 첫 시나리오.")
     use_llm: bool = Field(default=True, description="True면 실제 LLM 롤플레이, False면 더미 스크립트 재생.")
-    provider: str = Field(default="mlapi", description="LLM provider. 기본 gpt-5-nano(mlapi) — 속도/품질 균형. 더 좋은 품질은 mlapi-mini(gpt-5-mini).")
+    provider: str = Field(default="mlapi-nano", description="LLM provider. 기본 gpt-5-nano(mlapi-nano) — 속도/품질 균형. 더 좋은 품질은 mlapi-mini(gpt-5-mini).")
 
 
 def _session_or_404(sid: str) -> "mediation_live.MediationSession":

@@ -120,7 +120,7 @@ class LexicalEntailment:
 
 
 def _entails_via_chat_model(chat_model: Any, claim: str, grounding: str) -> bool | None:
-    """공용 함의 판정 호출 — GeminiSemanticVerifier·GroqSemanticVerifier가 공유한다.
+    """공용 함의 판정 호출 — MlapiSemanticVerifier가 쓴다.
 
     claim(작업 agent가 낸 규범 판단)이 grounding(사건 사실 등 근거)에 함의되는지
     LLM에게 묻는다:
@@ -224,75 +224,16 @@ def _semantic_verdicts(verifier: Any, claims: list[str], grounding: str) -> list
     return [verifier.entails(c, grounding) for c in claims]
 
 
-class GeminiSemanticVerifier:
-    """실제 LLM(Gemini)로 함의(entailment)를 판정하는 semantic 검증 전략.
-
-    LexicalEntailment(어휘겹침 근사)를 대체한다. 판정 로직은 _entails_via_chat_model
-    공용 함수에 위임하고, 이 클래스는 Gemini 클라이언트 생성만 담당한다.
-    """
-
-    def __init__(self, model: str = "gemini-flash-latest", temperature: float = 0.0) -> None:
-        from .llm import _load_gemini_api_key
-
-        api_key = _load_gemini_api_key()
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-        except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "langchain-google-genai 가 설치돼 있지 않습니다. "
-                "pip install -r requirements.txt 하세요."
-            ) from exc
-        self._llm = ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=api_key)
-
-    def entails(self, claim: str, grounding: str) -> bool | None:
-        return _entails_via_chat_model(self._llm, claim, grounding)
-
-    def entails_batch(self, claims: list[str], grounding: str) -> list[bool | None]:
-        return _entails_batch_via_chat_model(self._llm, claims, grounding)
-
-
-class GroqSemanticVerifier:
-    """실제 LLM(Groq)로 함의(entailment)를 판정하는 semantic 검증 전략.
-
-    GeminiSemanticVerifier와 동일하게 _entails_via_chat_model에 위임한다. Groq
-    무료 티어(하루 14,400회)가 Gemini(신규 계정 20회/일)보다 넉넉해 반복 검증에 적합.
-    기본 모델은 GroqLLM과 맞춰 openai/gpt-oss-120b — llama-3.3-70b-versatile은
-    disclosure류의 긴 자유서술 function-calling에서 반복 버그가 있었다(llm.py의
-    GroqLLM 참고). 짧은 entailment 판정 자체는 llama-3.3에서도 정상 작동했지만,
-    두 역할을 같은 모델로 통일해 일관성을 유지한다.
-    """
-
-    def __init__(self, model: str = "openai/gpt-oss-120b", temperature: float = 0.0) -> None:
-        from .llm import _load_groq_api_key
-
-        api_key = _load_groq_api_key()
-        try:
-            from langchain_groq import ChatGroq
-        except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "langchain-groq 가 설치돼 있지 않습니다. "
-                "pip install -r requirements.txt 하세요."
-            ) from exc
-        self._llm = ChatGroq(model=model, temperature=temperature, groq_api_key=api_key)
-
-    def entails(self, claim: str, grounding: str) -> bool | None:
-        return _entails_via_chat_model(self._llm, claim, grounding)
-
-    def entails_batch(self, claims: list[str], grounding: str) -> list[bool | None]:
-        return _entails_batch_via_chat_model(self._llm, claims, grounding)
-
-
 class MlapiSemanticVerifier:
     """실제 LLM(부트캠프 mlapi.run 프록시)로 함의를 판정하는 semantic 검증 전략.
 
-    GeminiSemanticVerifier·GroqSemanticVerifier와 동일하게 _entails_via_chat_model에
-    위임한다. llm.py의 MlapiLLM과 같은 프록시(.env의 MLAPI_API_KEY, base_url_env로
-    지정한 엔드포인트)를 쓴다. 기본은 gpt-5-nano(llm.py의 MlapiLLM 참고 — 개발 단계
-    기본 선택, 나중에 실제 시연 때는 더 좋은 LLM으로 교체 예정).
+    판정 로직은 _entails_via_chat_model 공용 함수에 위임한다. llm.py의 MlapiLLM과
+    같은 프록시(.env의 MLAPI_API_KEY, base_url_env로 지정한 엔드포인트)를 쓴다.
+    기본은 gpt-5-nano(llm.py의 MlapiLLM 참고 — 개발 단계 기본 선택, 나중에 실제
+    시연 때는 더 좋은 LLM으로 교체 예정).
 
     주의(2026-07 실측): 전체 파이프라인에서 이 검증기(nano)를 쓰면 PASS 0 · ESCALATE 7
-    로 전부 애매함 처리됐다. gpt-oss-120b(Groq)와의 직접 비교는 당시 Groq 키가
-    401로 막혀 있어 못 했음 — nano의 판정 정확도 자체가 나쁜 건지 그냥 보수적인
+    로 전부 애매함 처리됐다 — nano의 판정 정확도 자체가 나쁜 건지 그냥 보수적인
     성향인지 아직 검증 안 됨. 지금은 개발 단계라 우선 이대로 쓰고, 실제 시연 전에
     재검증이 필요하다.
 

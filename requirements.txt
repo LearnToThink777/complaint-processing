@@ -1,6 +1,6 @@
 pydantic>=2.12,<3
+# Gemini 임베딩(default_gemini_embed_fn, build_index.py --embed) 전용 — 채팅 LLM provider로는 안 씀.
 langchain-google-genai>=2,<3
-langchain-groq>=1,<2
 langchain-openai>=1.4,<2
 python-dotenv>=1,<2
 # 로컬 임베딩(default_local_embed_fn) — API 쿼터 없이 corpus_index.json 벡터 검색 색인 생성.

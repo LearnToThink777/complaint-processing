@@ -59,7 +59,7 @@ uvicorn complaint_processing.api:app --reload      # http://127.0.0.1:8000
 
 ## 5. 기술 스택 · 실행 · 테스트
 
-- **스택**: Python 3.12+, Pydantic v2, FastAPI + uvicorn(Swagger), LangChain(Gemini·Groq·OpenAI 호환 프록시), 표준 라이브러리 RAG.
+- **스택**: Python 3.12+, Pydantic v2, FastAPI + uvicorn(Swagger), LangChain(OpenAI 호환 프록시, Gemini 임베딩), 표준 라이브러리 RAG.
 - **오프라인 우선**: 기본은 `MockLLM`(fixtures.json)이라 API 키·네트워크 없이 전 기능 시연 가능. 실제 LLM은 `--llm`/`options.use_llm`.
 - **테스트**: `pytest complaint_processing/tests` → **16 passed** (골든/중재/critic/api).
 - **컨테이너**: `Dockerfile` — uvicorn으로 API + 정적 프론트 동시 서빙(포트 8000).

@@ -97,7 +97,7 @@ class MediationSession:
 _SESSIONS: dict[str, MediationSession] = {}
 
 
-def start(scenario_id: str | None = None, *, use_llm: bool = True, provider: str = "mlapi") -> MediationSession:
+def start(scenario_id: str | None = None, *, use_llm: bool = True, provider: str = "mlapi-nano") -> MediationSession:
     """새 라이브 세션을 만든다. scenario_id 미지정이면 첫 시나리오.
 
     record 는 당사자/도메인/경계 고지만 채운 '빈 원장'으로 시작하고, issues/log/balance 는

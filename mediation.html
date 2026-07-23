@@ -161,6 +161,8 @@
   .livebar button:hover:not(:disabled){border-color:var(--accent)}
   .livebar button:disabled{opacity:.45;cursor:default}
   .livebar button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .livebar select{background:var(--chip);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600}
+  .livebar select:disabled{opacity:.45;cursor:default}
   .livebar .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
   @keyframes sp{to{transform:rotate(360deg)}}
 </style>
@@ -201,6 +203,10 @@
   </div>
 
   <div class="livebar" id="livebar" hidden>
+    <select id="lvProvider">
+      <option value="mlapi-nano">GPT-5 nano (빠름)</option>
+      <option value="mlapi-mini">GPT-5 mini (고품질)</option>
+    </select>
     <button id="lvStart" class="primary">▶ 중재 시작</button>
     <button id="lvNext">다음 발언 ▶</button>
     <button id="lvAuto">⏵ 자동 진행</button>
@@ -253,7 +259,7 @@ let STATIC=[], dummyData=[], liveData=[];
 let mode='live';                 // 'live' | 'dummy' (기본 라이브)
 let busy=false, auto=false;
 // per-si 라이브 세션 상태
-const live={ sid:[], done:[], turns:[], max:[], fell:[], provider:'mlapi' };
+const live={ sid:[], done:[], turns:[], max:[], fell:[], provider:'mlapi-nano' };
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
@@ -416,9 +422,11 @@ function renderLiveUI(){
   $('lvStart').disabled = busy || started || isSnapshot;
   $('lvNext').disabled  = busy || !started || done || isSnapshot;
   $('lvAuto').disabled  = (busy && !auto) || isSnapshot;
+  $('lvProvider').disabled = busy || started || isSnapshot;
+  $('lvProvider').value = live.provider;
   $('lvStart').textContent = started ? '● 진행 중' : '▶ 중재 시작';
   $('lvAuto').textContent  = auto ? '⏸ 자동 정지' : '⏵ 자동 진행';
-  const modelName = {'mlapi':'gpt-5-nano','mlapi-mini':'gpt-5-mini','gemini':'gemini-flash','groq':'gpt-oss-120b'}[live.provider] || live.provider;
+  const modelName = {'mlapi-nano':'gpt-5-nano','mlapi-mini':'gpt-5-mini'}[live.provider] || live.provider;
   const prov = fell ? '더미 폴백' : modelName;
   const cnt = started ? ` · 턴 ${live.turns[si]}/${live.max[si]}` : '';
   $('livestat').innerHTML = (busy?'<span class="spin"></span> ':'') +
@@ -491,6 +499,7 @@ $('play').onclick=()=>{
 
 // 모드 전환 + 라이브 진행 버튼
 [...$('modesw').children].forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+$('lvProvider').onchange=e=>{ live.provider=e.target.value; render(); };
 $('lvStart').onclick=()=>driveOnce();
 $('lvNext').onclick=()=>driveOnce();
 $('lvAuto').onclick=()=>{ if(auto){auto=false; render();} else {auto=true; render(); autoLoop();} };

@@ -55,7 +55,7 @@ async function live(path, body) {
 }
 
 // 실제 파이프라인 스킬(기존 백엔드 /api/skills/*)을 그대로 호출한다.
-// provider 기본은 gpt-5-mini(mlapi-mini). 화면에서 gemini/gpt-5-nano 로 전환 가능.
+// provider 기본은 gpt-5-mini(mlapi-mini). 화면에서 gpt-5-nano(mlapi-nano)로 전환 가능.
 export const liveApi = {
   checklistPlan: (facts, product_en, provider = 'mlapi-mini') =>
     live('/api/skills/checklist-plan', {
@@ -89,8 +89,7 @@ export const liveApi = {
 
 export const PROVIDERS = [
   { key: 'mlapi-mini', label: 'GPT-5 mini', note: '실제 · ~20초' },
-  { key: 'gemini', label: 'Gemini', note: '실제 · ~5초(빠름)' },
-  { key: 'mlapi', label: 'GPT-5 nano', note: '실제 · ~20초' },
+  { key: 'mlapi-nano', label: 'GPT-5 nano', note: '실제 · 빠름' },
 ]
 
 export const api = {
