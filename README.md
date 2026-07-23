@@ -55,6 +55,7 @@ LLM이 **아닌** 부분: 사건 생성·이력 개시·원장 append·상태 �
 | 문서 | 내용 |
 |---|---|
 | [`CHANGELOG.md`](CHANGELOG.md) | 변경 기록 — 작업 재개용 단일 복원 지점 |
+| [`docs/SETUP.md`](docs/SETUP.md) | 로컬 실행 가이드(Docker) — 다른 개발자용 |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 아키텍처 개요 + 데이터 플로우(mermaid) |
 | [`docs/SKILLS.md`](docs/SKILLS.md) | LLM 스킬 레퍼런스 #0~#7(입출력·프롬프트·예시) |
 | [`docs/DIFFERENTIATION.md`](docs/DIFFERENTIATION.md) | 챌린지 주제 대비 차별점 정리 |
