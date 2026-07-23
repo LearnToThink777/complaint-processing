@@ -65,28 +65,45 @@ LLM이 **아닌** 부분: 사건 생성·이력 개시·원장 append·상태 �
 
 ## 구조
 
-이 폴더는 chonnam-clone 저장소 **밖**(`Downloads/complaint_processing`)에 독립적으로 둔 것입니다.
+이 저장소는 chonnam-clone(부트캠프 실습 저장소)과는 **독립된 별개 프로젝트**입니다 —
+`provider="proxy"`를 쓸 때만 그 저장소 경로가 필요하고, 그 외엔 전혀 몰라도 됩니다.
 
 ```
 complaint_processing/
-  schemas.py     # LLM 구조화 출력 5종(검토 계획 포함) + 색인 라벨(ChunkLabels) + 사건 입력 (Pydantic)
-  llm.py         # 호출 경계: MockLLM / ProxyLLM / RetrievalLLM — 같은 시그니처
-  fixtures.json  # 더미 답변 (콘솔 상수와 동일 내용)
-  agent.py       # 오케스트레이터: 언제 LLM을 부를지 아는 상태 기계
-  run.py         # 실행기 (콘솔 호환 frames JSON 생성)
-  retrieval.py   # 검색 코어: 청킹 · 메타 파싱 · VectorStore · 유사사례 조립 (LLM 아님)
-  build_index.py # (a) 오프라인 색인 스크립트 → corpus_index.json
+  schemas.py         # LLM 구조화 출력 스키마 + 색인 라벨(ChunkLabels) + 사건/중재 입력 (Pydantic)
+  tasks.py           # TaskRegistry — task별 프롬프트/mock 빌더 (커맨드 패턴)
+  llm.py             # 호출 경계: MockLLM / MlapiLLM / ProxyLLM / RetrievalLLM — 같은 시그니처
+  decorators.py      # ObservableLLM / RetryingLLM / CachingLLM / CriticLLM (데코레이터 체인)
+  critic.py          # 출력 검증(Critic) — 4단계 claim 판정 라우터 + semantic 검증기
+  fixtures.json      # 더미 답변 (콘솔 상수와 동일 내용)
+  agent.py           # 오케스트레이터: 언제 LLM을 부를지 아는 상태 기계
+  facade.py          # run_complaint_case() — run.py/api.py가 공유하는 진입점
+  run.py             # CLI 실행기 (콘솔 호환 frames JSON 생성)
+  api.py             # FastAPI 앱 — Swagger(/docs) + 정적 프론트 서빙
+  demo_api.py        # 관리자 시연용 SPA 전용 API(/api/staff/*, /api/complainant/*)
+  demo_store.py      # 위 데모 API가 쓰는 캔드(canned) 인메모리 데이터
+  mediation_live.py  # 라이브 중재 세션 스토어(턴 단위 진행, LLM 폴백 포함)
+  retrieval.py       # 검색 코어: 청킹 · 메타 파싱 · VectorStore · 유사사례 조립 (LLM 아님)
+  build_index.py     # (a) 오프라인 색인 스크립트 → corpus_index.json
+  viewer.html         # 정적 콘솔 — /api/frames 소비, 실패 시 frames.json 폴백
+  mediation.html      # 정적 중재 콘솔 — 정적 재생 + 라이브 세션(GPT-5 nano/mini 선택) 둘 다 지원
+  frontend/          # React SPA 소스(Vite) — 빌드 산출물은 ui/ 로 나가 /ui 에서 서빙
+  ui/                # frontend/ 빌드 산출물(커밋됨) — 소스 수정 없인 다시 빌드할 필요 없음
+  tests/             # pytest 스위트
+  docs/              # 아키텍처·스킬·셋업 등 상세 문서
+  Dockerfile         # 단일 컨테이너로 API+정적 프론트 서빙
 ```
 
 ## 실행
 
+> Docker로 바로 띄우려면(다른 개발자용) [`docs/SETUP.md`](docs/SETUP.md) 참고.
+
 ```bash
-cd C:\Users\alstj\Downloads\complaint_processing
 python run.py                              # 더미로 전체 시퀀스
 python run.py --json frames.json           # 콘솔 호환 JSON 저장
 
-# 또는 Downloads에서 모듈로:
-cd C:\Users\alstj\Downloads
+# 또는 이 저장소를 담은 상위 폴더에서 패키지로 실행하고 싶다면
+# (패키지 이름이 폴더명과 같아야 함, 예: 상위 폴더에서):
 python -m complaint_processing.run
 ```
 
@@ -98,10 +115,14 @@ python -m complaint_processing.run
 스키마가 곧 Pydantic 계약이므로 **Swagger 문서는 자동 생성**됩니다.
 
 ```bash
-cd C:\Users\alstj\Downloads
-pip install -r complaint_processing/requirements.txt
-uvicorn complaint_processing.api:app --reload   # http://127.0.0.1:8000
+pip install -r requirements.txt
+# 이 폴더가 상대 import로 짜여 있어(complaint_processing 패키지), 폴더명이
+# 반드시 "complaint_processing"이어야 한다 — 아니라면 그 이름으로 바꾸거나
+# clone 시 대상 폴더명을 지정하세요(docs/SETUP.md 참고).
+uvicorn --app-dir .. complaint_processing.api:app --reload   # http://127.0.0.1:8000
 ```
+
+> 폴더명 신경 쓰기 싫으면 Docker(`docs/SETUP.md`)로 띄우세요 — 이미지 안에서 자동으로 맞춰줍니다.
 
 | 문서/UI | 경로 |
 |---|---|
@@ -115,7 +136,11 @@ uvicorn complaint_processing.api:app --reload   # http://127.0.0.1:8000
 |---|---|---|
 | `POST /api/cases/run` | pipeline | 프레임 전체 + 관측/검증 요약 |
 | `GET /api/frames` | pipeline | 프레임 배열(골든과 동일 설정: 더미 + 색인 + `today=2026-07-15`) |
-| `GET /api/mediation` | mediation | 중재 기록 배열(`MediationRecord[]`) |
+| `GET /api/mediation` | mediation | 정적 중재 기록 배열(`MediationRecord[]`) |
+| `GET /api/mediation/live/scenarios` | mediation | 라이브 세션용 시나리오 목록 |
+| `POST /api/mediation/live/start` | mediation | 라이브 세션 시작(`provider`: `mlapi-nano`/`mlapi-mini`) |
+| `POST /api/mediation/live/{sid}/turn` | mediation | 라이브 세션 한 턴 진행 |
+| `GET /api/mediation/live/{sid}` | mediation | 라이브 세션 현재 상태 |
 | `POST /api/skills/checklist-plan` | skills | `ChecklistPlan` (#0) |
 | `POST /api/skills/verdict` | skills | `RegulatoryVerdict` (#1) |
 | `POST /api/skills/disclosure` | skills | `DualDisclosure` (#2) |
@@ -130,18 +155,22 @@ uvicorn complaint_processing.api:app --reload   # http://127.0.0.1:8000
 각 요청 body의 `options`(`use_llm`/`provider`/`retrieval`/`critic`)가 `get_backend`로 그대로
 흘러갑니다. 기본은 오프라인 더미라 키·네트워크 없이 즉시 응답합니다.
 
-**프론트엔드 — API 우선 + 정적 폴백**: FastAPI가 `viewer.html`·`mediation.html`도 같은
-오리진에서 서빙합니다(맨 끝 `StaticFiles` 마운트). 두 HTML은 먼저 `/api/frames`·`/api/mediation`을
-부르고, 실패하면 기존 정적 `frames.json`·`mediation.json`으로 폴백합니다 — 서버 위(`/viewer.html`)
-든 `file://`로 열든 둘 다 동작합니다. Docker(`Dockerfile`)도 `http.server` 대신 uvicorn으로
-API와 정적 프론트를 한 서버에서 서빙하도록 바꿨습니다.
+**프론트엔드 — 세 갈래**: FastAPI 한 서버가 전부 같은 오리진에서 서빙합니다(Docker도 동일).
+
+- `/viewer.html`·`/mediation.html` — 원래 콘솔. 먼저 `/api/frames`·`/api/mediation`을 부르고
+  실패하면 정적 `frames.json`·`mediation.json`으로 폴백(`file://`로 직접 열어도 동작). `mediation.html`은
+  정적 재생 모드 외에 **라이브 중재 모드**도 지원 — 세션 시작 전 `GPT-5 nano`/`mini`를 고를 수 있다.
+- `/ui` — 관리자 시연용 React SPA(`frontend/`, Vite 빌드 산출물이 `ui/`에 커밋됨). 캔드 데이터는
+  `demo_api.py`/`demo_store.py`, 일부 화면은 `provider` 선택 드롭다운으로 실제 스킬 API를 직접 호출.
+
+각 요청 body/쿼리의 `provider`는 `mlapi-nano`(기본, 빠름)·`mlapi-mini`(고품질, 느림)·`proxy`
+(chonnam-clone 필요) 중 하나입니다 — 자세한 키 발급 경로는 [`docs/SETUP.md`](docs/SETUP.md) 참고.
 
 ## 테스트
 
 ```bash
-cd C:\Users\alstj\Downloads
-pip install -r complaint_processing/requirements.txt   # fastapi/httpx 포함 (API 테스트에 필요)
-pytest complaint_processing/tests                       # 16 passed
+pip install -r requirements.txt   # fastapi/httpx 포함 (API 테스트에 필요)
+pytest tests                       # 19 passed
 ```
 
 | 테스트 파일 | 검증 |
@@ -152,24 +181,30 @@ pytest complaint_processing/tests                       # 16 passed
 | `tests/test_api.py` | FastAPI `TestClient` 스모크 + `/api/frames`==골든 + #6/#7 개인화·트랙 |
 
 > 골든(`frames.json`)은 **MockLLM 결정론**으로 생성되므로 API 키가 필요 없습니다. 파이프라인에
-> 단계를 추가/변경하면 골든을 재생성해야 합니다:
+> 단계를 추가/변경하면 골든을 재생성해야 합니다(이 명령은 패키지 폴더의 **부모** 디렉터리에서 실행):
 > `python -c "import json,pathlib; from complaint_processing.tests.test_golden_frames import regenerate_frames; pathlib.Path('complaint_processing/frames.json').write_text(json.dumps(regenerate_frames(),ensure_ascii=False,indent=2),encoding='utf-8')"`
 
 ## 더미 → 실제 LLM 교체
 
-`agent.py`는 백엔드를 모릅니다. `llm.py`의 `get_backend(use_llm=True)` 한 줄이
-`MockLLM` → `ProxyLLM`으로 바뀔 뿐이고, `ProxyLLM`은 chonnam-clone 저장소의
-`fixed/llm.py::chat_model()`을 `with_structured_output(schema, method="function_calling")`로
-감싸 week02와 똑같은 관용구로 호출합니다. 스키마가 계약이라 오케스트레이터는 수정 없이 그대로 돕니다.
+`agent.py`는 백엔드를 모릅니다. `llm.py`의 `get_backend(use_llm=True, provider=...)` 한 줄이
+`MockLLM` → 실제 LLM으로 바뀔 뿐입니다. 스키마가 계약이라 오케스트레이터는 수정 없이 그대로 돕니다.
 
-이 폴더가 저장소 밖에 있으므로, `--llm`을 쓰려면 저장소 경로를 알려줘야 합니다:
+기본 경로는 `provider="mlapi-nano"`(빠름, `get_backend`의 기본값) — 부트캠프 발급 프록시
+(`mlapi.run`)를 쓰며, 키 발급 경로·`.env` 설정은 [`docs/SETUP.md`](docs/SETUP.md)에 정리돼 있습니다.
 
 ```bash
-set CHONNAM_CLONE_REPO=C:\Users\alstj\Downloads\kakaotechcampus04\chonnam-clone
-python run.py --llm
+python run.py --llm                        # 실제 LLM 호출 (provider 기본값 mlapi-nano)
 ```
 
-(그 저장소의 `.env`에 `PROXY_TOKEN`도 설정돼 있어야 합니다.)
+`run.py`는 CLI에서 provider를 바꾸는 플래그가 없습니다 — `mlapi-mini`나 `provider="proxy"`
+(`ProxyLLM`, 이 폴더 밖 chonnam-clone 저장소의 `fixed/llm.py::chat_model()` 사용)로 바꾸려면
+`facade.run_complaint_case(case, use_llm=True, provider=...)`를 직접 호출하거나, 웹 API
+쪽 엔드포인트(요청 body의 `provider` 필드)를 쓰면 됩니다. `proxy`를 쓰려면 그 저장소 경로를
+알려주고 `.env`에 `PROXY_TOKEN`도 있어야 합니다:
+
+```bash
+set CHONNAM_CLONE_REPO=<chonnam-clone 저장소 경로>
+```
 
 ## 콘솔에 다시 꽂기
 
@@ -210,38 +245,17 @@ python run.py --retrieval        # #0(검토 계획)·#3(유사사례)만 실검
 python run.py --llm --retrieval  # 전부 실제 LLM + 실검색
 ```
 
-> 임베딩은 외부 의존성을 피해 `retrieval.py::VectorStore._score()`에서 **어휘 겹침
-> (Jaccard)으로 근사**했습니다. 실제로는 그 한 줄을 임베딩 코사인 유사도로 교체하면 됩니다.
+> 검색 스코어링은 2단 전략입니다: 색인에 사전계산 임베딩이 없으면 `retrieval.py::LexicalScorer`
+> (어휘 겹침·Jaccard 근사, 외부 의존성 0)로 폴백하고, `build_index.py --embed`로 임베딩을
+> 미리 계산해두면 `EmbeddingScorer`(로컬 `sentence-transformers` 또는 Gemini 임베딩, 코사인
+> 유사도)가 대신 쓰입니다 — 임베딩 클라이언트 생성이 실패해도(키 없음 등) 자동으로 Jaccard로
+> 떨어지므로 색인 형식이 달라도 항상 동작합니다.
 
-## 컴포넌트 구성 (누가 누구를 알고, 무엇을 주고받는가)
+## 컴포넌트 구성
 
-```
-run.py
-  └─ ComplaintAgent(agent.py)          ← 상태 기계 (오케스트레이터)
-       ├─ ComplaintCase(schemas.py)     : 입력 컨텍스트 (읽기 전용)
-       ├─ 결정론 상태
-       │    status / checklist / ledger / history / due_date / frames
-       └─ LLMBackend(llm.py)            ← 호출 경계 (agent.py는 구현을 모름)
-            ├─ MockLLM   → fixtures.json 를 읽어 schema.model_validate()
-            └─ ProxyLLM  → fixed/llm.py::chat_model() (chonnam-clone 저장소, CHONNAM_CLONE_REPO 필요)
-
-LLM 호출 5곳 (agent.py 메서드 → schemas.py 반환 타입)
-  plan_checklist()         -> ChecklistPlan       (이관 시 — 항목 자체가 여기서 정해짐)
-  review_item()            -> RegulatoryVerdict
-  dual_disclose()          -> DualDisclosure
-  retrieve_similar_cases() -> SimilarCasesResult
-  draft_renegotiation()    -> RenegotiationDraft
-```
-
-**의존 방향은 한쪽으로만 흐릅니다.**
-
-| 컴포넌트 | 알고 있는 것 | 모르는 것 |
-|---|---|---|
-| `agent.py` | `LLMBackend.structured(task, schema, context)` 시그니처, `schemas.py`의 각 스키마 | 백엔드가 `MockLLM`인지 `ProxyLLM`인지 |
-| `llm.py` (`MockLLM`/`ProxyLLM`) | 자신이 반환해야 할 `schemas.py`의 Pydantic 모델 | `agent.py`의 상태 전이 로직 |
-| `schemas.py` | 아무것도 — 순수 데이터 계약 | 누가 자신을 채우는지, 누가 소비하는지 |
-| `run.py` | `ComplaintAgent`를 생성해 `run()` 호출, 결과를 JSON/콘솔 포맷으로 출력 | LLM 호출이 몇 번 일어나는지, 어떤 백엔드인지 |
-
-이 표가 곧 "더미 → 실제 LLM 교체가 `agent.py` 수정 없이 가능한" 이유입니다 —
-`agent.py`는 `schemas.py`라는 계약과 `LLMBackend`라는 인터페이스에만 의존하고,
-`llm.py`의 구체 구현(`MockLLM`/`ProxyLLM`)은 그 계약 뒤에 숨어 있습니다.
+`agent.py`(상태 기계)는 `schemas.py`(Pydantic 계약)와 `LLMBackend`(전략 인터페이스)에만
+의존하고, 실제 구현이 `MockLLM`/`MlapiLLM`/`ProxyLLM` 중 무엇인지, `ObservableLLM`/`CriticLLM`/
+`RetrievalLLM` 같은 데코레이터가 몇 겹 감쌌는지는 모릅니다 — 그래서 더미 → 실제 LLM 교체가
+`agent.py` 수정 없이 `get_backend()` 호출부(팩토리, `llm.py`)에서만 일어납니다. 전체 컴포넌트
+다이어그램·의존 방향·데코레이터 체인 조립 순서는 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)의
+mermaid 다이어그램을 참고하세요 — 이 README는 진입점 요약까지만 다룹니다.
