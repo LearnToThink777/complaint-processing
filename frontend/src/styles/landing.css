@@ -7,7 +7,7 @@
 }
 .landing-inner {
   width: 100%;
-  max-width: 860px;
+  max-width: 960px;
   color: #eaf0f8;
 }
 .landing-brand {
@@ -31,10 +31,10 @@
 }
 .landing-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 18px;
 }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .landing-cards {
     grid-template-columns: 1fr;
   }
@@ -68,6 +68,9 @@
 }
 .lc-icon.cx {
   background: rgba(22, 163, 74, 0.22);
+}
+.lc-icon.med {
+  background: rgba(137, 87, 229, 0.24);
 }
 .landing-card h2 {
   margin: 0 0 6px;

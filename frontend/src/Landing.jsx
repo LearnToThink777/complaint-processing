@@ -23,10 +23,17 @@ export default function Landing() {
           </button>
 
           <button className="landing-card" onClick={() => nav('/app')}>
-            <div className="lc-icon cx">📱</div>
-            <h2>민원인 앱</h2>
+            <div className="lc-icon cx">🌐</div>
+            <h2>민원인 포털</h2>
             <p>민원 접수 · 진행현황 · 이력 · 알림 설정</p>
-            <span className="lc-cta">모바일 앱 &rarr;</span>
+            <span className="lc-cta">웹 포털 &rarr;</span>
+          </button>
+
+          <button className="landing-card" onClick={() => { window.location.href = '/mediation.html' }}>
+            <div className="lc-icon med">🤝</div>
+            <h2>협상·중재 콘솔</h2>
+            <p>쟁점 원장 · 중립성 밸런스 · 실시간 LLM 중재 시뮬레이션</p>
+            <span className="lc-cta">중재 콘솔 &rarr;</span>
           </button>
         </div>
 

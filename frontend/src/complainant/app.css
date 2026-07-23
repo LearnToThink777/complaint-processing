@@ -1,86 +1,132 @@
-/* ============ 민원인 모바일 앱 (폰 프레임 안에 렌더) ============ */
-.cx-stage {
+/* ============ 민원인 웹 포털 (전체 화면) ============ */
+.cx-web {
   min-height: 100vh;
-  background: radial-gradient(900px 500px at 50% -5%, #1d3b63 0%, #0d1b2e 60%);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
-.cx-phone {
-  width: 390px;
-  max-width: 100%;
-  height: 780px;
-  max-height: calc(100vh - 48px);
-  background: #eef1f6;
-  border-radius: 34px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  border: 8px solid #0b1420;
-}
-.cx-statusbar {
-  height: 40px;
-  flex: none;
-  background: #0d1b2e;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.cx-exit {
-  font-size: 11px;
-  color: #9fb2cc;
-  cursor: pointer;
-}
-.cx-scroll {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-}
-.cx-scroll::-webkit-scrollbar {
-  width: 0;
+  background: var(--bg);
 }
 
-/* ---- 하단 탭바 ---- */
-.cx-tabbar {
-  flex: none;
-  height: 64px;
-  background: #fff;
-  border-top: 1px solid var(--border);
+/* ---- 상단 앱바 + 가로 내비 ---- */
+.cx-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--navy-900);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+}
+.cx-appbar-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 60px;
   display: flex;
-  padding-bottom: 4px;
+  align-items: center;
+  gap: 22px;
+}
+.cx-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 0;
+  flex: none;
+}
+.cx-brand-logo {
+  font-size: 22px;
+}
+.cx-brand-text {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+.cx-topnav {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 100%;
+  flex: 1;
+  overflow-x: auto;
+}
+.cx-topnav::-webkit-scrollbar {
+  height: 0;
 }
 .cx-tab {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
-  color: var(--muted);
-  font-size: 10.5px;
+  gap: 7px;
+  padding: 0 14px;
+  color: #9fb0c9;
+  font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 2.5px solid transparent;
+  transition: color 0.12s, border-color 0.12s;
+}
+.cx-tab:hover {
+  color: #eaf0f8;
 }
 .cx-tab-icon {
-  font-size: 19px;
-  filter: grayscale(1) opacity(0.55);
+  font-size: 16px;
 }
 .cx-tab.active {
-  color: var(--navy);
+  color: #fff;
+  border-bottom-color: var(--accent);
 }
-.cx-tab.active .cx-tab-icon {
-  filter: none;
+.cx-exit {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9fb2cc;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 7px 12px;
+}
+.cx-exit:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* ---- 메인 콘텐츠 컨테이너 ---- */
+.cx-main {
+  min-height: calc(100vh - 60px);
+}
+.cx-container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 26px 32px 60px;
+}
+/* 폼·타임라인처럼 단일 열이 자연스러운 화면을 위한 좁은 래퍼 */
+.cx-narrow {
+  max-width: 720px;
+  margin: 0 auto;
+}
+/* 카드 목록을 넓은 화면에서 여러 열로 채우는 반응형 그리드 */
+.cx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.cx-grid > .cx-card,
+.cx-grid > .cx-notice {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .cx-appbar-inner,
+  .cx-container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .cx-brand-text {
+    display: none;
+  }
 }
 
 /* ---- 공통 페이지 패딩 ---- */
 .cx-page {
-  padding: 18px 16px 24px;
+  padding: 8px 0 24px;
 }
 .cx-page-title {
   font-size: 20px;
@@ -91,7 +137,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 4px;
+  padding: 6px 0 4px;
 }
 .cx-topbar h1 {
   font-size: 18px;
@@ -101,7 +147,7 @@
 
 /* ---- 히어로 인사 카드(홈) ---- */
 .cx-hero {
-  margin: 14px 16px 0;
+  margin: 8px 0 0;
   border-radius: 18px;
   padding: 20px;
   color: #fff;
@@ -135,7 +181,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 22px 18px 10px;
+  margin: 24px 2px 12px;
 }
 .cx-section h3 {
   margin: 0;
@@ -149,7 +195,7 @@
 
 /* ---- 카드 ---- */
 .cx-card {
-  margin: 0 16px 12px;
+  margin: 0 0 12px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -203,7 +249,7 @@
   display: flex;
   gap: 12px;
   padding: 14px 16px;
-  margin: 0 16px 10px;
+  margin: 0 0 10px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -239,7 +285,7 @@
 .cx-label {
   font-size: 13.5px;
   font-weight: 700;
-  margin: 18px 18px 8px;
+  margin: 18px 2px 8px;
 }
 .cx-label .sub {
   font-weight: 500;
@@ -252,7 +298,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0 16px;
+  margin: 0;
 }
 .cx-chip {
   border: 1px solid var(--border-strong);
@@ -270,8 +316,8 @@
 }
 .cx-textarea {
   display: block;
-  width: calc(100% - 32px);
-  margin: 0 16px;
+  width: 100%;
+  margin: 0;
   min-height: 120px;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
@@ -286,12 +332,12 @@
 }
 .cx-count {
   text-align: right;
-  margin: 4px 18px 0;
+  margin: 4px 2px 0;
   font-size: 11.5px;
   color: var(--muted);
 }
 .cx-dropzone {
-  margin: 0 16px;
+  margin: 0;
   border: 1.5px dashed var(--border-strong);
   border-radius: 12px;
   padding: 22px;
@@ -302,12 +348,12 @@
   background: var(--panel-2);
 }
 .cx-submit {
-  margin: 22px 16px 8px;
+  margin: 22px 0 8px;
 }
 .cx-select {
   display: block;
-  width: calc(100% - 32px);
-  margin: 0 16px;
+  width: 100%;
+  margin: 0;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
   padding: 13px;
@@ -319,7 +365,7 @@
 
 /* ---- 진행현황 타임라인 ---- */
 .cx-dday-banner {
-  margin: 14px 16px 0;
+  margin: 8px 0 0;
   background: var(--warn-bg);
   border-radius: 16px;
   padding: 16px 18px;
@@ -343,7 +389,7 @@
   margin-top: 2px;
 }
 .cx-timeline {
-  margin: 20px 20px 0;
+  margin: 20px 4px 0;
   position: relative;
 }
 .cx-step {
@@ -432,7 +478,7 @@
 .cx-filter {
   display: flex;
   gap: 8px;
-  margin: 4px 16px 14px;
+  margin: 4px 0 16px;
 }
 .cx-filter button {
   border: 1px solid var(--border);
@@ -466,7 +512,7 @@
 
 /* ---- 마이페이지 ---- */
 .cx-profile {
-  margin: 14px 16px 0;
+  margin: 8px 0 0;
   background: linear-gradient(135deg, #1d3b63, #0d1b2e);
   border-radius: 18px;
   padding: 20px;
@@ -543,11 +589,10 @@
   align-items: center;
   gap: 12px;
   padding: 15px 16px;
-  margin: 0 16px;
+  margin: 0 0 10px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 14px;
-  margin-bottom: 10px;
   font-size: 13.5px;
   font-weight: 600;
 }

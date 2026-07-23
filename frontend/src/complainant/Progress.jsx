@@ -12,7 +12,7 @@ export default function Progress() {
   }
 
   return (
-    <div>
+    <div className="cx-narrow">
       <div className="cx-topbar"><h1>진행현황</h1></div>
 
       <div className="cx-dday-banner">

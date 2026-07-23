@@ -213,6 +213,18 @@ def _mock_chunk_label(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, 
     }
 
 
+def _mock_mediation_turn(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
+    # 라이브 세션의 더미 폴백. 스크립트(정적 mediation.json)에서 '다음 턴 슬라이스'를
+    # 계산하는 일은 세션 스토어(mediation_live.py)가 소유한다 — 스토어가 그 결과를
+    # context["_mock_turn"] 에 실어 넘기면 여기서는 그대로 돌려준다(스토어가 seq/refs 부여).
+    # 스토어 밖에서 직접 호출된 경우엔 최소한의 결정론적 종료 턴을 반환한다.
+    turn = context.get("_mock_turn")
+    if turn is not None:
+        return dict(turn)
+    return {"utterance": "(스크립트 종료)", "mediator_notes": [], "issue_updates": [],
+            "balance_updates": [], "phase": "종료"}
+
+
 # ---- 각 task 의 프롬프트 빌더 (실제 LLM 에게 줄 지시문을 context로 조립) ------------
 # 프롬프트 엔지니어링은 여기서 한다. context 필드를 자연어 본문에 녹이고, 필요하면
 # few-shot 예시·출력 규칙·조건 분기를 함수 안에서 자유롭게 덧붙이면 된다.
@@ -350,6 +362,51 @@ def _prompt_chunk_label(ctx: dict[str, Any]) -> str:
     )
 
 
+def _prompt_mediation_turn(ctx: dict[str, Any]) -> str:
+    # 라이브 중재 한 턴. LLM 은 (1) 배정된 편의 다음 발언을 롤플레이하고,
+    # (2) 곧바로 '중립 중재자'로 돌아와 그 발언이 건드린 쟁점을 양측 대칭으로 원장에 갱신한다.
+    # seq/refs 번호는 매기지 않는다 — 세션 스토어가 부여한다(내용만 생성).
+    speaker = ctx.get("speaker", {})
+    side = ctx.get("speaker_side", "A")
+    other = "B" if side == "A" else "A"
+    transcript = ctx.get("transcript", [])
+    tail = transcript[-12:]  # 최근 12줄만 — 프롬프트 길이 방어
+    convo = "\n".join(f"[{t['seq']}] ({t['kind']}/{t['speaker']}) {t['text']}" for t in tail) or "(아직 발언 없음)"
+    issues = ctx.get("issues_so_far", [])
+    issue_lines = "\n".join(f"- {i['code']} · {i['title']} [{i['status']}]" for i in issues) or "(아직 정리된 쟁점 없음)"
+    last = ctx.get("turn_index", 0) >= ctx.get("max_turns", 12) - 1
+    return (
+        "너는 금융 민원 '중재 콘솔'을 구동한다. 이 자리에는 A(민원인/피검사자)와 "
+        "B(회사/감독원) 두 당사자가 앉아 있고, 너는 그 사이에서 사실을 정리하고 규정을 "
+        "해석하는 중립 중재자다. 이번 턴에는 두 가지를 한 번에 한다.\n\n"
+        f"① 발언 롤플레이 — 지금은 {side}편 '{speaker.get('role','')} {speaker.get('name','')}'의 차례다. "
+        "지금까지의 대화 흐름에 자연스럽게 이어지는, 그 사람 입장에서의 현실적인 발언 한 마디를 "
+        "utterance 에 쓴다(1~3문장, 실제 상담에서 나올 법한 구어체). 근거 없는 새 사실을 지어내지 말고 "
+        "이미 오간 사실 위에서 말한다. **같은 말을 반복하지 말고 대화를 다음 논점으로 진전시켜라** — "
+        "직전까지 자료제출·설명 여부만 오갔다면 이제 투자성향 분류(적합성)·서명 경위·손실 규모·배상/해지 "
+        "절차 등 아직 안 다룬 쟁점으로 넘어간다. 상담은 한 주제를 맴돌지 않고 여러 논점을 차례로 짚는다.\n\n"
+        "② 중재자 갱신 — 그 발언이 끝나면 너는 곧바로 중립 중재자로 돌아온다:\n"
+        "  · mediator_notes: 필요하면 자문(규정·쟁점 해석) 또는 서기(사실 이력 기록)를 0~2줄 남긴다.\n"
+        "  · issue_updates: 이 발언이 건드린 쟁점을 code(조문/기준)를 키로 신규 추가하거나 갱신한다. "
+        "**한 쟁점만 매 턴 다시 갱신하지 마라 — 새 발언이 [지금까지 정리된 쟁점]에 없는 다른 법적 축을 "
+        "건드리면 반드시 새로운 code 로 별도 쟁점을 세워라.** 금융 민원은 보통 서로 다른 쟁점 3~5개가 "
+        "드러난다(예: 적합성원칙·설명의무·입증책임·분쟁조정 절차·위법계약해지권 등 각기 다른 조문). "
+        "이미 세운 쟁점을 심화할 게 아니라면 이번 턴엔 새 쟁점 하나를 세우는 쪽을 우선하라. "
+        "반드시 for_a·against_a·for_b·against_b 네 칸을 모두 채워 어느 한쪽에 유리·불리한 사실을 "
+        "함께 기록한다(한쪽 편만 들지 않는다). 위반 여부를 네가 판정하지 말고 decider(분쟁조정위·법원 등 "
+        "에이전트 밖)에 남긴다. 정말로 새 논점이 없을 때만 빈 목록.\n"
+        "  · balance_updates: 이번 자문이 어느 쪽에 유리/제한적으로 작용했는지 0~2건 태깅한다"
+        "(leans=A/B/neutral). A 유리와 B 유리가 장기적으로 균형을 이루도록 신경 쓴다.\n\n"
+        f"③ 국면(phase): 대화가 사실 확인·쟁점 정리를 마쳐 자연스럽게 수렴하면 '수렴', "
+        f"더 진행할 게 있으면 '계속'. {'이번이 마지막 턴이므로 반드시 종료로 마무리하라.' if last else ''} "
+        "판단(위반 여부·배상)은 이 자리에서 내리지 않는다 — 그건 처리 단계와 분쟁조정위·법원의 몫이다.\n\n"
+        f"[도메인] {ctx.get('domain','')}\n"
+        f"[상대편] {other}\n"
+        f"[지금까지 정리된 쟁점]\n{issue_lines}\n\n"
+        f"[대화 이력(최근)]\n{convo}"
+    )
+
+
 # ---- task 정의(커맨드 목록) — 프롬프트 빌더(build_prompt) + 더미 빌더 --------------
 
 _BASE_GUIDE = (
@@ -369,6 +426,7 @@ _ALL_SPECS: list[TaskSpec] = [
     TaskSpec("rights_guide", _prompt_rights_guide, _mock_rights_guide),
     TaskSpec("general_guidance", _prompt_general_guidance, _mock_general_guidance),
     TaskSpec("chunk_label", _prompt_chunk_label, _mock_chunk_label),
+    TaskSpec("mediation_turn", _prompt_mediation_turn, _mock_mediation_turn),
 ]
 
 

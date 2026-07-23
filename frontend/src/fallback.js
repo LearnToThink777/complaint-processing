@@ -144,7 +144,7 @@ export const FALLBACK = {
     menu: [
       { key: 'faq', label: '자주 묻는 질문' },
       { key: 'support', label: '고객센터 문의' },
-      { key: 'about', label: '앱 정보', value: 'v1.0.0' },
+      { key: 'about', label: '서비스 정보', value: 'v1.0.0' },
     ],
   },
   complainantProductTypes: [

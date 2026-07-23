@@ -35,6 +35,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import mediation_live
 from .decorators import CriticBlocked, CriticLLM, unwrap
 from .demo_api import router as demo_router
 from .facade import run_complaint_case
@@ -328,6 +329,78 @@ def get_mediation() -> list[MediationRecord]:
         raise HTTPException(status_code=404, detail="mediation.json 이 없습니다.")
     raw = json.loads(path.read_text(encoding="utf-8"))
     return [MediationRecord.model_validate(r) for r in raw]
+
+
+# ---- 라이브 중재 (턴 단위 세션 — LLM 이 양측을 롤플레이하며 원장을 실시간으로 쌓는다) ----
+# 정적 /api/mediation 은 폴백용으로 그대로 둔다. 아래는 mediation_live.py 세션 스토어의
+# 얇은 HTTP 어댑터: start(세션 생성) → turn(한 발언 진행) → get(현재 상태) 3단.
+# 키 없음/LLM 실패는 스토어가 조용히 더미(정적 스크립트)로 폴백하고 fell_back=True 로 알린다.
+
+
+class MediationStartRequest(BaseModel):
+    """POST /api/mediation/live/start — 라이브 중재 세션 시작."""
+
+    scenario_id: str | None = Field(default=None, description="시나리오 case_id. 미지정이면 첫 시나리오.")
+    use_llm: bool = Field(default=True, description="True면 실제 LLM 롤플레이, False면 더미 스크립트 재생.")
+    provider: str = Field(default="mlapi", description="LLM provider. 기본 gpt-5-nano(mlapi) — 속도/품질 균형. 더 좋은 품질은 mlapi-mini(gpt-5-mini).")
+
+
+def _session_or_404(sid: str) -> "mediation_live.MediationSession":
+    sess = mediation_live.get(sid)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다(서버 재시작 시 소멸).")
+    return sess
+
+
+@app.get("/api/mediation/live/scenarios", tags=["mediation"], summary="라이브 중재 — 시나리오 목록")
+def mediation_scenarios() -> list[dict[str, str]]:
+    """시작 화면용 시나리오(id/도메인) 목록. mediation.json 시드에서 뽑는다."""
+    return mediation_live.scenarios()
+
+
+@app.post("/api/mediation/live/start", tags=["mediation"], summary="라이브 중재 — 세션 시작")
+def mediation_start(req: MediationStartRequest) -> dict[str, Any]:
+    """새 세션을 만들고 '빈 원장'(당사자·도메인·경계만) + 세션 id 를 돌려준다."""
+    try:
+        sess = mediation_live.start(req.scenario_id, use_llm=req.use_llm, provider=req.provider)
+    except RuntimeError as exc:  # 시드 없음 등
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "sid": sess.sid,
+        "scenario_id": sess.scenario_id,
+        "record": sess.record.model_dump(),
+        "done": sess.done,
+        "turn_index": sess.turn_index,
+        "max_turns": sess.max_turns,
+        "live": sess.use_llm,
+        "fell_back": sess.fell_back,
+    }
+
+
+@app.post("/api/mediation/live/{sid}/turn", tags=["mediation"], summary="라이브 중재 — 한 발언 진행")
+def mediation_turn(sid: str) -> dict[str, Any]:
+    """세션을 한 턴 진행한다(LLM 1회 또는 더미 스크립트 1슬라이스). 갱신된 record 반환."""
+    sess = _session_or_404(sid)
+    try:
+        return mediation_live.next_turn(sess)
+    except Exception as exc:  # noqa: BLE001 — 예기치 못한 오류는 502
+        raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+@app.get("/api/mediation/live/{sid}", tags=["mediation"], summary="라이브 중재 — 현재 상태")
+def mediation_state(sid: str) -> dict[str, Any]:
+    """세션의 현재 record 전체와 진행 상태를 돌려준다."""
+    sess = _session_or_404(sid)
+    return {
+        "sid": sess.sid,
+        "scenario_id": sess.scenario_id,
+        "record": sess.record.model_dump(),
+        "done": sess.done,
+        "turn_index": sess.turn_index,
+        "max_turns": sess.max_turns,
+        "live": sess.use_llm,
+        "fell_back": sess.fell_back,
+    }
 
 
 # ---- LLM 스킬 5종 ---------------------------------------------------------

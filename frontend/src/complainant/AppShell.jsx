@@ -12,24 +12,29 @@ const TABS = [
 export default function AppShell() {
   const nav = useNavigate()
   return (
-    <div className="cx-stage">
-      <div className="cx-phone">
-        <div className="cx-statusbar">
-          <span>9:41</span>
-          <span className="cx-exit" onClick={() => nav('/')}>✕ 시연 종료</span>
+    <div className="cx-web">
+      <header className="cx-appbar">
+        <div className="cx-appbar-inner">
+          <button className="cx-brand" onClick={() => nav('/')}>
+            <span className="cx-brand-logo">🛡️</span>
+            <span className="cx-brand-text">금융지킴이</span>
+          </button>
+          <nav className="cx-topnav">
+            {TABS.map((t) => (
+              <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => `cx-tab ${isActive ? 'active' : ''}`}>
+                <span className="cx-tab-icon">{t.icon}</span>
+                <span className="cx-tab-label">{t.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+          <button className="cx-exit" onClick={() => nav('/')}>✕ 시연 종료</button>
         </div>
-        <div className="cx-scroll">
+      </header>
+      <main className="cx-main">
+        <div className="cx-container">
           <Outlet />
         </div>
-        <nav className="cx-tabbar">
-          {TABS.map((t) => (
-            <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => `cx-tab ${isActive ? 'active' : ''}`}>
-              <span className="cx-tab-icon">{t.icon}</span>
-              <span className="cx-tab-label">{t.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+      </main>
     </div>
   )
 }

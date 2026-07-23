@@ -9,7 +9,7 @@ const SCRIPT = [
   { path: '/staff/status', cap: '처리현황 — 판정 원장 · AI 신뢰도 검증(PASS/ESCALATE/BLOCK) · 유사사례 RAG · 협상/중재', ms: 6000 },
   { path: '/staff/history', cap: '이력 — 반복 신고 패턴 감지 · 판정 일관성 점수', ms: 4500 },
   { path: '/staff/mypage', cap: '마이페이지 — 계정 · 알림 설정 · 활동 로그', ms: 4000 },
-  { path: '/app', cap: '민원인 앱 · 홈 — 진행 중 민원과 예상 완료 D-day', ms: 4500 },
+  { path: '/app', cap: '민원인 포털 · 홈 — 진행 중 민원과 예상 완료 D-day', ms: 4500 },
   { path: '/app/new', cap: '민원접수 — 상품유형 · 사실관계 · 증빙 첨부', ms: 4500 },
   { path: '/app/progress', cap: '진행현황 — 접수 → 검토 → 판정 → 협의 → 종결 타임라인', ms: 4500 },
   { path: '/app/history', cap: '이력 — 전체 / 진행중 / 종결 필터', ms: 4000 },

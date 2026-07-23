@@ -12,7 +12,7 @@ export default function MyPage() {
   const notifications = noti ?? data.notifications
 
   return (
-    <div>
+    <div className="cx-narrow">
       <div className="cx-topbar">
         <h1>마이페이지</h1>
         <span style={{ fontSize: 17 }}>⚙️</span>

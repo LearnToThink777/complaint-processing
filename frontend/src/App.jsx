@@ -32,7 +32,7 @@ export default function App() {
         <Route path="mypage" element={<StaffMyPage />} />
       </Route>
 
-      {/* 민원인 모바일 앱 */}
+      {/* 민원인 웹 포털 */}
       <Route path="/app" element={<AppShell />}>
         <Route index element={<CxHome />} />
         <Route path="new" element={<CxNew />} />

@@ -47,18 +47,20 @@ export default function Home() {
       <div className="cx-section">
         <h3>최근 안내</h3>
       </div>
-      {data.notices.map((n, i) => (
-        <div key={i} className="cx-notice">
-          <div className="cx-notice-icon">{NOTICE_ICON[n.icon] || 'ℹ️'}</div>
-          <div style={{ flex: 1 }}>
-            <div className="n-title">
-              <span>{n.title}</span>
-              <span className="n-at">{n.at}</span>
+      <div className="cx-grid">
+        {data.notices.map((n, i) => (
+          <div key={i} className="cx-notice">
+            <div className="cx-notice-icon">{NOTICE_ICON[n.icon] || 'ℹ️'}</div>
+            <div style={{ flex: 1 }}>
+              <div className="n-title">
+                <span>{n.title}</span>
+                <span className="n-at">{n.at}</span>
+              </div>
+              <div className="n-body">{n.body}</div>
             </div>
-            <div className="n-body">{n.body}</div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

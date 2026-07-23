@@ -318,3 +318,72 @@ class MediationRecord(BaseModel):
         default="에이전트는 규정 해석·사실 정리·이력 기록까지. 위반 여부 최종 판단은 감독원·분쟁조정위·법원.",
         description="에이전트 권한 경계 고지문(모든 시나리오 공통).",
     )
+
+
+# ---------------------------------------------------------------------------
+# 라이브 중재 — 턴 단위 입출력 스키마
+#
+# 위 MediationRecord 가 '완결된 상담 1건'이라면, 아래는 그 레코드를 한 발언씩
+# '진행하면서 쌓아가는' 라이브 세션의 입출력이다. 정적 mediation.json 은 미리
+# 완성된 레코드지만, 라이브 세션은 mediation_turn 을 반복 호출해 log·issues·balance
+# 를 실시간으로 늘려간다(대화 진행 = 요약 갱신, 턴당 LLM 1회).
+#
+# 설계 핵심: seq/refs 같은 '번호'는 LLM 이 매기지 않는다(전역 카운터를 알 수 없다).
+# LLM 은 내용(발언 본문·자문/서기·쟁점 델타·밸런스 태깅)만 내고, 세션 스토어
+# (mediation_live.py)가 seq 를 찍고 refs 를 '이번 턴에 부여된 seq 들'로 연결한다.
+# 그래서 아래 draft 스키마들에는 seq/ref 필드가 없다.
+# ===========================================================================
+
+
+class MediationNote(BaseModel):
+    """중재자(에이전트)가 이번 턴에 남기는 자문/서기 한 줄. seq 는 스토어가 부여."""
+
+    kind: Literal["자문", "서기"] = Field(description="자문(규정·쟁점 해석) 또는 서기(사실 이력 기록).")
+    text: str = Field(description="한 줄 요약. 근거에 없는 사실·수치는 지어내지 않는다.")
+
+
+class MediationIssueDraft(BaseModel):
+    """이번 턴에 새로 세우거나 갱신할 쟁점(원장 upsert 단위). refs 는 스토어가 부여.
+
+    code 를 키로 upsert 한다: 같은 code 가 이미 있으면 내용 갱신, 없으면 신규 추가.
+    MediationIssue 의 refs 를 제외한 필드와 1:1 대응한다.
+    """
+
+    code: str = Field(description="근거 조문/기준(upsert 키). 예: '금소법 제19조 설명의무'.")
+    title: str = Field(description="쟁점 한 줄.")
+    for_a: str = Field(description="A(민원인/피검사자)에게 유리한 사실·소명 근거.")
+    against_a: str = Field(description="A에게 불리하게 작용하는 정황.")
+    for_b: str = Field(description="B(회사/감독원)에게 유리한 사실·근거.")
+    against_b: str = Field(description="B의 주장에 걸리는 제한.")
+    agent_note: str = Field(description="자문 요지 + 판단 유보 취지.")
+    decider: str = Field(description="최종 판단 주체. 항상 에이전트 밖. 예: '분쟁조정위·법원'.")
+    status: IssueStatus = Field(description="쟁점 상태 라벨.")
+
+
+class MediationBalanceDraft(BaseModel):
+    """이번 턴 자문이 어느 쪽에 유리/제한적으로 작용했는지의 태깅. ref 는 스토어가 부여."""
+
+    leans: Leaning = Field(description="이 자문이 유리하게 작용한 쪽. A/B/neutral.")
+    summary: str = Field(description="무엇을 유리/제한했는지 한 줄.")
+
+
+class MediationTurnResult(BaseModel):
+    """라이브 중재 한 턴의 산출 — 당사자 발언 1개 + 중재자 기록 + 원장·밸런스 델타.
+
+    턴당 LLM 1회로 '대화 진행'(utterance)과 '요약 갱신'(issue/balance/mediator_log)을
+    함께 낸다. 세션 스토어가 이 델타에 seq/refs 를 부여해 MediationRecord 에 병합한다.
+    """
+
+    utterance: str = Field(description="이번 차례 당사자의 발언 본문. 배정된 편(A/B)의 입장에서 말한다.")
+    mediator_notes: list[MediationNote] = Field(
+        default_factory=list, description="중재자가 이 발언에 이어 남기는 자문/서기(0~2줄)."
+    )
+    issue_updates: list[MediationIssueDraft] = Field(
+        default_factory=list, description="이번 턴에 신규/갱신할 쟁점(code 로 upsert). 없으면 빈 목록."
+    )
+    balance_updates: list[MediationBalanceDraft] = Field(
+        default_factory=list, description="이번 턴 자문의 중립성 태깅(0~2건)."
+    )
+    phase: Literal["계속", "수렴", "종료"] = Field(
+        default="계속", description="대화 국면. '종료'면 세션이 이번 턴에서 마무리된다."
+    )

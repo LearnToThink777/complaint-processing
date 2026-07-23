@@ -66,6 +66,11 @@
   width: 20px;
   text-align: center;
 }
+.staff-nav-ext {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.6;
+}
 .staff-user {
   margin-top: auto;
   display: flex;

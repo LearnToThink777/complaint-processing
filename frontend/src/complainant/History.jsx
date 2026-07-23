@@ -29,19 +29,21 @@ export default function History() {
         ))}
       </div>
 
-      {rows.map((r) => (
-        <div key={r.case_id} className="cx-card cx-hist-card">
-          <div className="cx-hist-icon">{TYPE_ICON(r.type)}</div>
-          <div style={{ flex: 1 }}>
-            <div className="cx-case-title" style={{ fontSize: 13.5 }}>{r.type}</div>
-            <div className="cx-case-sub">접수일 {r.intake_date}</div>
-            <div className="cx-case-sub" style={{ marginTop: 4 }}>
-              {r.status === 'closed' ? `종결 · ${r.closed_at} 완료` : `검토 중 · 예상 완료일 ${r.expected_completion}`}
+      <div className="cx-grid">
+        {rows.map((r) => (
+          <div key={r.case_id} className="cx-card cx-hist-card">
+            <div className="cx-hist-icon">{TYPE_ICON(r.type)}</div>
+            <div style={{ flex: 1 }}>
+              <div className="cx-case-title" style={{ fontSize: 13.5 }}>{r.type}</div>
+              <div className="cx-case-sub">접수일 {r.intake_date}</div>
+              <div className="cx-case-sub" style={{ marginTop: 4 }}>
+                {r.status === 'closed' ? `종결 · ${r.closed_at} 완료` : `검토 중 · 예상 완료일 ${r.expected_completion}`}
+              </div>
             </div>
+            <span className={`badge ${r.status === 'closed' ? 'good' : 'info'}`}>{r.status_ko}</span>
           </div>
-          <span className={`badge ${r.status === 'closed' ? 'good' : 'info'}`}>{r.status_ko}</span>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

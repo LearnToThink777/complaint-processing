@@ -21,7 +21,7 @@ export default function NewComplaint() {
 
   if (result) {
     return (
-      <div className="cx-page" style={{ textAlign: 'center', paddingTop: 60 }}>
+      <div className="cx-page cx-narrow" style={{ textAlign: 'center', paddingTop: 60 }}>
         <div style={{ fontSize: 54 }}>✅</div>
         <h2 style={{ marginTop: 16 }}>민원이 접수되었어요</h2>
         <p className="muted">담당자가 곧 검토를 시작합니다.</p>
@@ -43,7 +43,7 @@ export default function NewComplaint() {
   }
 
   return (
-    <div>
+    <div className="cx-narrow">
       <div className="cx-topbar">
         <h1>‹ 민원접수</h1>
         <span style={{ fontSize: 16 }}>❔</span>

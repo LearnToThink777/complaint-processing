@@ -29,6 +29,11 @@ export default function StaffShell() {
               <span>{n.label}</span>
             </NavLink>
           ))}
+          <a href="/mediation.html" className="staff-nav-item">
+            <span className="staff-nav-icon">🤝</span>
+            <span>협상·중재</span>
+            <span className="staff-nav-ext">↗</span>
+          </a>
         </nav>
         <div className="staff-user">
           <div className="staff-avatar">홍</div>
