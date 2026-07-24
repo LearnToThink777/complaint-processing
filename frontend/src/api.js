@@ -111,5 +111,7 @@ export const api = {
   complainantHistory: () => get('/api/complainant/history', 'complainantHistory'),
   complainantMe: () => get('/api/complainant/me', 'complainantMe'),
   complainantProductTypes: () => get('/api/complainant/product-types', 'complainantProductTypes'),
+  // 접수 전 AI 쟁점 분석 — 폴백 없이 실제 서버 결과만(LLM 필요). 실패 시 예외 → 화면이 안내.
+  analyzeComplaint: (product_type, facts) => live('/api/complainant/analyze', { product_type, facts }),
   submitComplaint: (body) => post('/api/complainant/complaints', body, 'submitComplaint'),
 }

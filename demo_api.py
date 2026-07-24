@@ -28,8 +28,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from . import demo_db, demo_store, perf
-from .agentic_plan import run_plan_generation
+from .agentic_plan import extract_keywords, run_plan_generation
 from .db import get_session
+from .schemas import CaseKeywords
 
 router = APIRouter(prefix="/api", tags=["demo"])
 
@@ -147,12 +148,38 @@ def complainant_product_types() -> list[dict[str, Any]]:
     return demo_store.complainant_product_types()
 
 
+class AnalyzeRequest(BaseModel):
+    """POST /api/complainant/analyze 요청 — 접수 전 '쟁점 미리보기'용(DB 저장 없음)."""
+
+    product_type: str = Field(description="금융상품 유형 key. 예: 'els_dls'.")
+    facts: str = Field(description="사실관계 입력(자연어).")
+
+
+@router.post("/complainant/analyze", response_model=CaseKeywords,
+             summary="접수 전 AI 쟁점 분석 — 사실관계에서 검색 키워드 추출(미리보기)")
+def analyze_complaint(req: AnalyzeRequest) -> CaseKeywords:
+    """민원인이 제출하기 전에 '무엇을 쟁점으로 접수하게 되는지' 미리 보여준다.
+
+    민원인은 법률 검색어를 모른다 — 여기서 자연어 사실관계를 법령·결정례가 쓰는 검색어로
+    승격(extract_keywords)해 칩으로 되돌린다. 민원인이 확인·보정한 키워드가 제출 시 함께
+    실려 검토계획 검색 품질을 끌어올린다. DB 에는 저장하지 않는다(제출 시점에 저장).
+    빈약한 입력이어도 실패하지 않는다(extract_keywords 가 항상 CaseKeywords 반환).
+    """
+    product_en = demo_db.PRODUCT_EN.get(req.product_type, "general")
+    return extract_keywords(req.facts, product_en, provider="mlapi-nano")
+
+
 class ComplaintSubmission(BaseModel):
     """POST /api/complainant/complaints 요청 — 민원인이 앱에서 제출하는 신규 민원."""
 
     product_type: str = Field(description="금융상품 유형 key. 예: 'els_dls'.")
     facts: str = Field(description="사실관계 입력(자연어).")
     attachments: list[str] = Field(default_factory=list, description="첨부 파일명 목록(시연용).")
+    keywords: dict[str, Any] | None = Field(
+        default=None,
+        description="접수 전 AI 쟁점 분석(/analyze)에서 민원인이 확인·보정한 검색 키워드(CaseKeywords). "
+        "있으면 검토계획 생성이 이 키워드를 재사용한다(백그라운드 재추출 생략).",
+    )
 
 
 @router.post("/complainant/complaints", summary="신규 민원 제출 → 접수 + AI 검토계획 자동 생성")
@@ -165,6 +192,6 @@ def submit_complaint(
 
     응답은 즉시 반환(접수번호+상태). 검토계획은 직원 화면이 폴링하며 채워진다.
     """
-    result = demo_db.submit_complaint(session, req.product_type, req.facts, req.attachments)
+    result = demo_db.submit_complaint(session, req.product_type, req.facts, req.attachments, req.keywords)
     background.add_task(run_plan_generation, result["case_id"])
     return result

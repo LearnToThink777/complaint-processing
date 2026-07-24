@@ -247,10 +247,13 @@ def complainant_progress(session: Session) -> dict[str, Any]:
 
 
 def submit_complaint(session: Session, product_type: str, facts: str,
-                     attachments: list[str] | None = None) -> dict[str, Any]:
+                     attachments: list[str] | None = None,
+                     keywords: dict[str, Any] | None = None) -> dict[str, Any]:
     """민원인이 앱에서 제출한 신규 민원을 접수(DB 저장)하고 검토계획 생성을 예약 상태로 만든다.
 
     라우트가 반환값의 case_id 로 BackgroundTasks(run_plan_generation)를 예약한다.
+    keywords: 접수 전 AI 쟁점 분석(/analyze)에서 민원인이 확인·보정한 검색 키워드. 있으면
+    사건에 저장해 두어 검토계획 생성이 재추출 없이 재사용한다(honor user edits + LLM 호출 절감).
     """
     today = date.today()
     expected = (today + timedelta(days=_COMPLETION_DAYS)).isoformat()
@@ -263,6 +266,7 @@ def submit_complaint(session: Session, product_type: str, facts: str,
         complaint_type="",
         track="legal",
         facts=facts,
+        keywords=keywords or {},
         attachments=attachments or [],
         status="intake",
         intake_date=today.isoformat(),

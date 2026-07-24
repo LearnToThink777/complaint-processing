@@ -295,10 +295,17 @@ def run_plan_generation(case_id: str, *, provider: str = "mlapi-nano") -> None:
         case = s.execute(select(Case).where(Case.case_id == case_id)).scalar_one_or_none()
         if case is None:
             return
-        # ① 접수 사실관계에서 검색용 키워드를 뽑아 사건에 영속(접수 화면 재사용) →
-        # ② 그 키워드를 검토계획 에이전트에 넘겨 검색 질의를 강화한다(하이브리드).
-        keywords = extract_keywords(case.facts, case.product_en, provider=provider)
-        case.keywords = keywords.model_dump()
+        # ① 검색용 키워드를 확보한다. 민원인이 접수 전 AI 쟁점 분석(/analyze)에서 확인·보정한
+        #    키워드가 이미 사건에 실려 있으면 그대로 재사용(재추출 없이 — 민원인 보정 존중 + LLM
+        #    호출 절감). 없으면(직원 이관·시드 사건 등) 여기서 사실관계로부터 추출해 영속한다.
+        # ② 확보한 키워드를 검토계획 에이전트에 넘겨 검색 질의를 강화한다(하이브리드).
+        from .schemas import CaseKeywords
+
+        if case.keywords:
+            keywords = CaseKeywords.model_validate(case.keywords)
+        else:
+            keywords = extract_keywords(case.facts, case.product_en, provider=provider)
+            case.keywords = keywords.model_dump()
         plan, provider_used, tool_calls, duration_ms, error = generate_checklist_plan_agentic(
             case.facts, case.product_en, provider=provider, keywords=keywords
         )
