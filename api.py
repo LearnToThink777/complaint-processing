@@ -276,6 +276,20 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def _warm_agentic_plan_store() -> None:
+    """검토계획 생성의 콜드스타트(74MB 코퍼스+임베딩 모델 최초 적재)를 서버 기동 시 미리 끝낸다.
+
+    별도 스레드라 서버 기동/헬스체크를 막지 않는다. 첫 실제 요청이 이 적재 비용을 물지
+    않게 하는 것이 목적(docs/PERFORMANCE.md 참고) — 실패해도 요청 시점에 다시 시도된다.
+    """
+    import threading
+
+    from .agentic_plan import warm_store
+
+    threading.Thread(target=warm_store, daemon=True).start()
+
+
 @app.get("/health", summary="헬스 체크", include_in_schema=False)
 def health() -> dict[str, str]:
     return {"status": "ok"}

@@ -34,9 +34,38 @@
 ### 왜 느린가 (기록으로 확인되는 것)
 
 - **콜드스타트**: 첫 생성은 `corpus_index.json`(74MB) + 로컬 임베딩 모델(e5-base) 최초 적재가 겹친다.
-- **순차 LLM 왕복**: tool-calling 루프는 `invoke → 도구 실행 → 재invoke`(최대 4회) → 최종 구조화 출력까지
+- **순차 LLM 왕복**: tool-calling 루프는 `invoke → 도구 실행 → 재invoke` → 최종 구조화 출력까지
   LLM 호출이 여러 번 순차로 나간다. `tool_calls` 값이 클수록 총 시간이 늘어난다.
   → `GET /api/perf/summary?task=checklist_plan_agentic` 의 `tool_calls` 와 `duration_ms` 상관을 보면 된다.
+
+### 개선 이력 — 2026-07-24: 60s → 28s (53%↓)
+
+perf 기록으로 병목을 특정해 두 가지를 고쳤다([agentic_plan.py](../agentic_plan.py), [api.py](../api.py)).
+
+1. **낭비되는 LLM 왕복 제거**: 예전 루프는 도구 실행 후 "더 부를 도구가 있는지"를 확인하려고
+   빈 답이 나올 걸 알면서도 재invoke를 했다(최대 4라운드). `_MAX_TOOL_ROUNDS=1`로 바꿔 도구
+   1라운드 실행 직후 곧장 최종 구조화 출력으로 넘어간다 — LLM 호출 3회 → **2회**(하한).
+2. **콜드스타트를 요청 밖으로 이동**: `corpus_index.json` + e5 임베딩 모델 적재를 첫 사용자
+   요청이 아니라 **서버 기동 시 백그라운드 스레드**(`api.py`의 `@app.on_event("startup")` →
+   `agentic_plan.warm_store()`)에서 미리 끝낸다. 사용자 요청은 이미 데워진 스토어를 쓴다.
+3. (부수) LLM 호출에 `timeout=90s, max_retries=0` — 멈춘 호출이 응답을 무한정 지연시키지 않고
+   빠르게 fallback으로 강등되게.
+
+**측정(같은 사건 사실, mlapi-nano)**:
+
+| 시점 | 조건 | duration_ms | tool_calls |
+|---|---|---|---|
+| 개선 전 | 4라운드 상한, 요청 안에서 콜드스타트 | 59,962 / 95,538 | 2 |
+| 개선 후 | 1라운드 상한, 사전 예열(warm_store) | 28,095(실서버 재현) · 벤치 평균 28,014(n=3) | 2 |
+
+실서버(uvicorn, `--reload` 없이 정상 기동) 기준 검증 — 제출 응답은 0.12s(비동기 정상), 백그라운드
+생성이 폴링으로 16초 만에 `ready` 확인, 응답의 `duration_ms=28095`. 재현성 확인을 위해
+`benchmark:checklist_agentic_v2` task로 3회 반복 측정(21.9s~33.8s, p50 28.3s) — 자세한 원본은
+`PERFORMANCE_LOG.md` 참고.
+
+**남은 병목**: 여전히 LLM 호출 2회(≈각 10~17s)가 지배적이다. 더 줄이려면 (a) 최종 구조화 출력을
+tool-calling 응답과 한 번에 받도록 프롬프트를 바꿔 1회로 합치거나, (b) 더 빠른 모델/스트리밍으로
+체감 지연을 낮추는 방향이 남아있다 — 다음 개선 후보.
 
 ---
 

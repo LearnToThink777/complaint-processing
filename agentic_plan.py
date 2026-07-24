@@ -35,7 +35,13 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
     "mlapi-mini": ("openai/gpt-5-mini", "MLAPI_BASE_URL"),
 }
 
-_MAX_TOOL_ITERS = 4  # 도구 호출 왕복 상한(무한루프 방지)
+# 도구 호출 '라운드' 상한. 성능 기록으로 확인된 병목이 순차 LLM 왕복이라, 라운드를
+# 최소로 둔다: 1이면 (도구 1라운드 실행) → (곧바로 최종 구조화 출력)으로 LLM 호출이
+# 총 2회(에이전트형 tool calling의 하한). 예전 4는 "더 부를 도구 있나?"를 되묻는
+# 왕복을 매번 1회씩 낭비했다. 더 깊은 탐색이 필요하면 이 값을 올린다(호출 수↑·시간↑).
+_MAX_TOOL_ROUNDS = 1
+
+_LLM_TIMEOUT_S = 90  # 단일 LLM 호출 타임아웃 — 멈추면 빠르게 fallback 으로 강등
 
 # ---- VectorStore 지연 싱글턴 ------------------------------------------------
 # corpus_index.json(74MB) 로드 + e5 임베딩 모델 생성은 매우 무겁다. 프로세스당 1회만
@@ -72,6 +78,19 @@ def _get_store() -> Any:
             _STORE_FAILED = True
             _STORE = None
     return _STORE
+
+
+def warm_store() -> None:
+    """VectorStore(74MB 코퍼스 + e5 임베딩 모델)를 미리 적재한다.
+
+    첫 검토계획 생성이 콜드스타트 비용을 물지 않도록 서버 기동 시 백그라운드 스레드에서
+    호출한다(api.py). 이미 적재됐으면 즉시 반환. 실패해도 조용히 넘어간다(검색 없이도
+    생성은 fallback 으로 동작).
+    """
+    try:
+        _get_store()
+    except Exception:
+        pass
 
 
 # ---- LangChain 도구: 기존 검색을 tool 로 노출 -------------------------------
@@ -159,7 +178,10 @@ def generate_checklist_plan_agentic(
         model_id, base_url_env = _PROVIDERS.get(provider, _PROVIDERS["mlapi-nano"])
         api_key, base_url = _load_mlapi_config(base_url_env)  # 키/URL 없으면 RuntimeError
         # temperature 미지정 — GPT-5 계열은 기본값(1)만 허용(MlapiLLM 주석 참고).
-        chat = ChatOpenAI(model=model_id, api_key=api_key, base_url=base_url)
+        # timeout: 멈춘 호출을 오래 붙들지 않고 예외 → fallback 으로. max_retries=0: 재시도로
+        # 소요시간이 배가되는 것을 막는다(우리는 실패 시 fallback 이 있으므로 재시도 불필요).
+        chat = ChatOpenAI(model=model_id, api_key=api_key, base_url=base_url,
+                          timeout=_LLM_TIMEOUT_S, max_retries=0)
 
         tools = _build_tools()
         ctx = {"facts": facts, "product_en": product_en}
@@ -175,17 +197,19 @@ def generate_checklist_plan_agentic(
         if tools:
             llm_tools = chat.bind_tools(tools)
             tool_map = {t.name: t for t in tools}
-            for _ in range(_MAX_TOOL_ITERS):
+            for _ in range(_MAX_TOOL_ROUNDS):
                 ai = llm_tools.invoke(messages)
                 messages.append(ai)
                 calls = getattr(ai, "tool_calls", None) or []
                 if not calls:
-                    break
+                    break  # 도구를 안 불렀으면 바로 최종 출력으로
                 for call in calls:
                     tool_calls += 1
                     fn = tool_map.get(call["name"])
                     result = fn.invoke(call["args"]) if fn else "[]"
                     messages.append(ToolMessage(content=result, tool_call_id=call["id"]))
+                # 도구 결과를 얻었으면 '더 부를까'를 되묻지 않고 곧장 최종 출력으로 간다
+                # (그 되묻는 invoke 1회가 예전 병목이었다). 더 깊은 탐색은 _MAX_TOOL_ROUNDS↑.
 
         # 최종 구조화 출력 — _invoke_structured 와 동일 관용구(function_calling).
         messages.append(HumanMessage(content=(
