@@ -43,6 +43,7 @@ class Case(Base):
     complaint_type: Mapped[str] = mapped_column(String, default="")  # AI 분류 라벨(생성 후 채워짐)
     track: Mapped[str] = mapped_column(String, default="legal")  # legal | general
     facts: Mapped[str] = mapped_column(Text, default="")
+    keywords: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # 접수 시 추출한 검색 키워드(schemas.CaseKeywords.model_dump())
     attachments: Mapped[list[Any]] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String, default="intake", index=True)  # 상태머신 키
     intake_date: Mapped[str] = mapped_column(String, default="")  # "2025-06-01" (UI 표기용 문자열)

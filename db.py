@@ -101,9 +101,28 @@ def seed_intake(session: Session) -> None:
     session.commit()
 
 
+def _ensure_columns() -> None:
+    """create_all 은 '없는 테이블'만 만들고 '기존 테이블에 새 컬럼'은 추가하지 못한다.
+
+    개발용 단일 SQLite 를 지우지 않고도 스키마를 앞으로 나아가게 하는 최소 마이그레이션 —
+    cases.keywords(접수 키워드 JSON)가 없으면 ALTER TABLE 로 더한다. 멱등(이미 있으면 스킵)이라
+    매 기동마다 안전하게 호출한다. SQLite 외 DB(예: Postgres)는 정식 마이그레이션 도구를
+    쓰는 것을 전제로 여기선 건드리지 않는다.
+    """
+    if not DB_URL.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(cases)"))}
+        if "keywords" not in cols:
+            conn.execute(text("ALTER TABLE cases ADD COLUMN keywords JSON DEFAULT '{}'"))
+
+
 def init_db() -> None:
-    """테이블 생성(없으면) + 시드. api.py 기동 시 1회 호출한다."""
+    """테이블 생성(없으면) + 경량 마이그레이션 + 시드. api.py 기동 시 1회 호출한다."""
     _DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine)
+    _ensure_columns()
     with SessionLocal() as session:
         seed_intake(session)

@@ -213,6 +213,32 @@ def _mock_chunk_label(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, 
     }
 
 
+def _mock_keyword_extraction(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
+    # 질의용 키워드 추출의 오프라인 폴백. 실제 LLM 없이 결정론적으로 파생한다:
+    #   - issue_terms      : 트리아지 법률 신호(_LEGAL_SIGNALS) 중 사실에 등장한 것(=격식 검색어)
+    #   - everyday_terms   : 사실의 한글 명사 후보(민원인 원문 어휘)
+    #   - entities         : 상품유형(product_en) 등 고유 키워드
+    #   - search_queries   : 상품유형 + 쟁점/명사를 이어붙인 검색 질의 후보(중복 제거)
+    facts = context.get("facts", "")
+    product_en = context.get("product_en", "")
+    issue = [s for s in _LEGAL_SIGNALS if s in facts]
+    nouns = list(dict.fromkeys(re.findall(r"[가-힣]{2,}", facts)))[:8]
+    entities = [product_en] if product_en else []
+    queries: list[str] = []
+    if issue:
+        queries.append(" ".join([product_en, *issue[:3]]).strip())
+    queries.append(" ".join([product_en, *nouns[:4]]).strip())
+    queries = list(dict.fromkeys(q for q in queries if q)) or [facts[:60]]
+    head = re.split(r"[。.\n]", facts.strip(), maxsplit=1)[0][:50]
+    return {
+        "issue_terms": issue,
+        "everyday_terms": nouns[:5],
+        "entities": entities,
+        "search_queries": queries[:3],
+        "summary": head or product_en,
+    }
+
+
 def _mock_mediation_turn(context: dict[str, Any], fx: dict[str, Any]) -> dict[str, Any]:
     # 라이브 세션의 더미 폴백. 스크립트(정적 mediation.json)에서 '다음 턴 슬라이스'를
     # 계산하는 일은 세션 스토어(mediation_live.py)가 소유한다 — 스토어가 그 결과를
@@ -243,6 +269,24 @@ def _prompt_checklist_plan(ctx: dict[str, Any]) -> str:
         "분류하고(classification) 어떤 법령·절차 위반 여부를 검토해야 하는지 스스로 도출해 "
         "각 항목의 근거 법령·절차와 함께 밝혀라. 사실에 없는 근거를 지어내지 않는다. "
         "애매하면 legal로 둔다(법률 분쟁을 일반 안내로 흘려보내지 않는다).\n\n"
+        f"[상품 유형] {ctx.get('product_en', '')}\n"
+        f"[사건 사실]\n{ctx.get('facts', '')}"
+    )
+
+
+def _prompt_keyword_extraction(ctx: dict[str, Any]) -> str:
+    return (
+        "민원인이 접수한 자연어 사실관계다. 곧 이 사건의 검토계획을 세우기 위해 법령·결정례를 "
+        "벡터 검색으로 찾을 것이다. 검색이 관련 근거를 잘 끌어오도록, 사실관계에서 검색용 키워드를 뽑아라.\n"
+        "- issue_terms: 법률 쟁점 키워드. 민원인의 일상어를 법령·결정례가 실제 쓰는 '격식 검색어'로 승격하라 "
+        "(예: '원금 다 잃음'→'원금 비보장·손실', '설명 못 들음'→'설명의무 위반', '나한테 안 맞는 상품'→'적합성 원칙').\n"
+        "- everyday_terms: 민원인이 실제로 쓴 일상어 표현(원문 어휘 유지).\n"
+        "- entities: 상품·기관·주체 등 고유 키워드(예: 'ELS', '고위험', '안정추구형', '고령자').\n"
+        "- search_queries: 위를 조합한 검색 질의 후보 2~3개. 각각 한 구/문장으로, search_statutes/search_precedents 에 "
+        "바로 넣기 좋게 완성하라.\n"
+        "- summary: 핵심 쟁점 한 줄.\n"
+        "사실에 없는 쟁점·상품을 지어내지 마라. 사실이 빈약하면 있는 것만 뽑되, 일상어는 반드시 법률 검색어로 "
+        "승격해 검색 적중률을 높여라.\n\n"
         f"[상품 유형] {ctx.get('product_en', '')}\n"
         f"[사건 사실]\n{ctx.get('facts', '')}"
     )
@@ -415,6 +459,7 @@ _BASE_GUIDE = (
 )
 
 _ALL_SPECS: list[TaskSpec] = [
+    TaskSpec("keyword_extraction", _prompt_keyword_extraction, _mock_keyword_extraction),
     TaskSpec("checklist_plan", _prompt_checklist_plan, _mock_checklist_plan),
     TaskSpec("verdict", _prompt_verdict, _mock_verdict),
     TaskSpec("verdict_batch", _prompt_verdict_batch, _mock_verdict_batch),

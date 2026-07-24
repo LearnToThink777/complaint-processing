@@ -206,6 +206,39 @@ class ChunkLabels(BaseModel):
     )
 
 
+class CaseKeywords(BaseModel):
+    """접수 시점, 민원인의 자연어 사실관계(facts)에서 뽑아낸 '검색용 키워드' 묶음.
+
+    색인 쪽 ChunkLabels(문서에 붙인 keywords/everyday_questions)의 질의(query) 쪽 대칭이다.
+    민원인은 '원금 다 잃었어요'라고 쓰지만 법령·결정례는 '적합성 원칙 위반'이라 쓰여 있다 —
+    이 비대칭을 접수 단계에서 미리 메워, 검토계획 생성 시 벡터 검색이 관련 조문·결정례를
+    잘 끌어오도록 한다(질의 확장). 동시에 접수 화면에서 민원인에게 '이런 쟁점으로 접수됩니다'
+    라고 보여주고 보정받는 UI 재료가 되므로 Case.keywords 로 영속된다.
+
+    핵심은 issue_terms 승격 — 일상어 신고를 법령·결정례가 실제로 쓰는 격식 검색어로 올린다.
+    search_queries 는 검토계획 에이전트(agentic_plan)가 search_statutes/search_precedents 에
+    그대로 넣기 좋게 이미 조합해 둔 질의 후보다.
+    """
+
+    issue_terms: list[str] = Field(
+        default_factory=list,
+        description="법률 쟁점 키워드(법령·결정례 검색어로 쓸 격식어). 예: '적합성 원칙', '설명의무', '불완전판매'.",
+    )
+    everyday_terms: list[str] = Field(
+        default_factory=list,
+        description="민원인이 실제로 쓴 일상어 표현. 예: '원금 다 잃음', '설명 못 들음', '안전한 줄 알았음'.",
+    )
+    entities: list[str] = Field(
+        default_factory=list,
+        description="상품·기관·주체 등 고유 키워드. 예: 'ELS', '고위험', '안정추구형', '고령자'.",
+    )
+    search_queries: list[str] = Field(
+        default_factory=list,
+        description="위 키워드를 조합한 벡터 검색 질의 후보 2~3개(각각 한 구/문장). 검토계획 에이전트가 그대로 검색 도구에 넣는다.",
+    )
+    summary: str = Field(default="", description="이 민원의 핵심 쟁점 한 줄 요약(법률어 허용).")
+
+
 # 콘솔이 다루는 하나의 사건 입력. LLM 호출들의 공통 컨텍스트가 됩니다.
 class ComplaintCase(BaseModel):
     """민원 사건 입력. 콘솔 상단 CASE/Overview 카드에 대응."""

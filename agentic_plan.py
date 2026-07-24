@@ -151,6 +151,54 @@ def _fallback_plan(product_en: str) -> ChecklistPlan:
     )
 
 
+# ---- 질의 쪽 키워드 브리징 --------------------------------------------------
+# 색인 쪽은 chunk_label 로 문서에 keywords/everyday_questions 를 붙여 임베딩한다(retrieval).
+# 질의 쪽엔 그게 없었다 — 민원인의 빈약한 일상어 facts 가 그대로 검색 query 로 쓰였다.
+# 여기서 접수 사실관계를 '검색용 키워드(CaseKeywords)'로 승격해, 아래 에이전트가 그 키워드·
+# 질의로 search_statutes/search_precedents 를 호출하게 한다(하이브리드의 '추출' 절반).
+
+
+def extract_keywords(facts: str, product_en: str, *, provider: str = "mlapi-nano") -> Any:
+    """접수 사실관계에서 검색용 키워드(schemas.CaseKeywords)를 뽑는다.
+
+    실LLM 우선, 키 없음/오류면 결정론적 오프라인 더미(_mock_keyword_extraction)로 폴백해
+    흐름이 끊기지 않게 한다(검토계획 fallback 과 같은 철학). 반환은 항상 CaseKeywords.
+    """
+    from .schemas import CaseKeywords
+
+    ctx = {"facts": facts, "product_en": product_en}
+    for use_llm in (True, False):  # 실LLM → 실패 시 더미
+        try:
+            from .llm import get_backend
+
+            be = get_backend(use_llm=use_llm, provider=provider, observe=False)
+            return be.structured("keyword_extraction", CaseKeywords, ctx)
+        except Exception:
+            continue
+    return CaseKeywords()
+
+
+def _keywords_hint(keywords: Any) -> str:
+    """CaseKeywords → 에이전트 첫 지시문에 붙일 '검색 힌트' 블록(하이브리드의 '프롬프트 강화' 절반).
+
+    키워드가 없거나(폴백 전면 실패) 비어 있으면 빈 문자열 — 예전 동작과 동일하게 흘러간다.
+    """
+    if keywords is None:
+        return ""
+    terms = ", ".join([*(getattr(keywords, "issue_terms", None) or []),
+                       *(getattr(keywords, "entities", None) or [])])
+    queries = "; ".join(getattr(keywords, "search_queries", None) or [])
+    if not terms and not queries:
+        return ""
+    lines = ["\n\n[접수 시 추출된 검색 키워드 — 이 질의로 먼저 검색하라]"]
+    if terms:
+        lines.append(f"- 쟁점·주체 키워드: {terms}")
+    if queries:
+        lines.append(f"- 추천 검색 질의: {queries}")
+    lines.append("위 키워드·질의를 우선 활용해 search_statutes/search_precedents 를 호출하고, 부족하면 사실에서 스스로 보완하라.")
+    return "\n".join(lines)
+
+
 # ---- 에이전트 루프 ----------------------------------------------------------
 
 
@@ -159,6 +207,7 @@ def generate_checklist_plan_agentic(
     product_en: str,
     *,
     provider: str = "mlapi-nano",
+    keywords: Any = None,
 ) -> tuple[ChecklistPlan, str, int, float, str]:
     """실제 LLM 에이전트로 검토계획을 생성한다.
 
@@ -190,7 +239,7 @@ def generate_checklist_plan_agentic(
             HumanMessage(content=(
                 "사건 사실을 읽고, 필요하면 search_statutes/search_precedents 도구로 "
                 "관련 법령·결정례를 검색해 근거를 모아라. 근거가 충분하면 도구를 더 부르지 말고 "
-                "다음 단계에서 최종 검토계획을 낼 준비가 됐다고만 답하라."
+                "다음 단계에서 최종 검토계획을 낼 준비가 됐다고만 답하라." + _keywords_hint(keywords)
             )),
         ]
 
@@ -246,8 +295,12 @@ def run_plan_generation(case_id: str, *, provider: str = "mlapi-nano") -> None:
         case = s.execute(select(Case).where(Case.case_id == case_id)).scalar_one_or_none()
         if case is None:
             return
+        # ① 접수 사실관계에서 검색용 키워드를 뽑아 사건에 영속(접수 화면 재사용) →
+        # ② 그 키워드를 검토계획 에이전트에 넘겨 검색 질의를 강화한다(하이브리드).
+        keywords = extract_keywords(case.facts, case.product_en, provider=provider)
+        case.keywords = keywords.model_dump()
         plan, provider_used, tool_calls, duration_ms, error = generate_checklist_plan_agentic(
-            case.facts, case.product_en, provider=provider
+            case.facts, case.product_en, provider=provider, keywords=keywords
         )
         rp = ReviewPlan(
             case_fk=case.id,
