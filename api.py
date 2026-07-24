@@ -25,6 +25,7 @@ from __future__ import annotations
 """
 
 import json
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import mediation_live
+from .db import init_db
 from .decorators import CriticBlocked, CriticLLM, unwrap
 from .demo_api import router as demo_router
 from .facade import run_complaint_case
@@ -203,7 +205,12 @@ def _run_skill(
     *,
     facts: str = "",
 ) -> Any:
-    """스킬 1건: 백엔드 조립 → structured() 1회 호출. 실패는 HTTP 오류로 변환."""
+    """스킬 1건: 백엔드 조립 → structured() 1회 호출. 실패는 HTTP 오류로 변환.
+
+    소요시간은 성공/실패 모두 perf.record() 로 남긴다(PERFORMANCE_LOG.md 참고) —
+    기록 자체가 실패해도 이 함수의 본래 동작(스킬 호출)에는 영향을 주지 않는다.
+    """
+    t0 = time.perf_counter()
     try:
         backend: LLMBackend = get_backend(
             use_llm=options.use_llm,
@@ -212,13 +219,32 @@ def _run_skill(
             facts=facts,
             critic=options.critic,
         )
-        return backend.structured(task, schema, context)
+        result = backend.structured(task, schema, context)
+        _record_skill_perf(task, options.provider, t0, outcome="ok")
+        return result
     except CriticBlocked as exc:
+        _record_skill_perf(task, options.provider, t0, outcome="error", error=str(exc))
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:  # 키/설정 누락 등 (예: MlapiLLM __init__)
+        _record_skill_perf(task, options.provider, t0, outcome="error", error=str(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — 그 외(네트워크·LLM 오류)는 502
+        _record_skill_perf(task, options.provider, t0, outcome="error", error=f"{type(exc).__name__}: {exc}")
         raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+def _record_skill_perf(task: str, provider: str, t0: float, *, outcome: str, error: str = "") -> None:
+    from . import perf
+    from .db import SessionLocal
+
+    try:
+        with SessionLocal() as s:
+            perf.record(
+                s, task=f"skill:{task}", provider=provider,
+                duration_ms=(time.perf_counter() - t0) * 1000, outcome=outcome, error=error,
+            )
+    except Exception:
+        pass  # 기록 실패가 스킬 응답을 막아선 안 된다.
 
 
 # ===========================================================================
@@ -492,6 +518,8 @@ def skill_general_guidance(req: GeneralGuidanceRequest) -> Any:
 # ---- 데모 프론트 엔드포인트 (직원 대시보드 + 민원인 앱) --------------------
 # 기존 파이프라인/스킬 엔드포인트는 그대로 두고, 시연용 라우트를 얇게 얹는다.
 # 반드시 정적 마운트("/") 앞에 include 해야 /api/* 가 가려지지 않는다.
+# 접수→검토계획→승인 흐름은 SQLite(data/complaint.db)에 저장한다. 테이블 생성+시드를 여기서 1회.
+init_db()
 app.include_router(demo_router)
 
 

@@ -23,10 +23,13 @@ api.py 에서 `app.include_router(demo_router)` 로 한 줄만 얹어 붙인다(
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from . import demo_store
+from . import demo_db, demo_store, perf
+from .agentic_plan import run_plan_generation
+from .db import get_session
 
 router = APIRouter(prefix="/api", tags=["demo"])
 
@@ -42,17 +45,57 @@ def staff_summary() -> dict[str, Any]:
     }
 
 
-@router.get("/staff/intake", summary="사건접수 — 신규 이관 사건 목록")
-def staff_intake() -> list[dict[str, Any]]:
-    return demo_store.staff_intake()
+@router.get("/staff/intake", summary="사건접수 — 신규 이관/제출 사건 목록")
+def staff_intake(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return demo_db.staff_intake(session)
 
 
 @router.get("/staff/checklist-plan/{case_id}", summary="사건접수 — AI 자동 검토계획")
-def staff_checklist_plan(case_id: str) -> dict[str, Any]:
-    plan = demo_store.staff_checklist_plan(case_id)
+def staff_checklist_plan(case_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
+    plan = demo_db.staff_checklist_plan(session, case_id)
     if plan is None:
-        raise HTTPException(status_code=404, detail="검토 계획을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사건을 찾을 수 없습니다.")
     return plan
+
+
+@router.post("/staff/checklist-plan/{case_id}/generate", summary="사건접수 — AI 검토계획 생성 트리거")
+def generate_checklist_plan(
+    case_id: str,
+    background: BackgroundTasks,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """이관/시드 사건에 대해 실제 LLM 검토계획 생성을 시작한다(백그라운드).
+
+    민원인 제출 사건은 접수 즉시 자동 생성되므로 이 엔드포인트는 직원 화면의 수동
+    트리거(재생성 포함)용이다. 반환 즉시 status=plan_generating; 프론트가 폴링한다.
+    """
+    scheduled = demo_db.start_generation(session, case_id)
+    if scheduled is None:
+        raise HTTPException(status_code=409, detail="지금은 검토계획을 생성할 수 없습니다(이미 진행 중이거나 사건 없음).")
+    background.add_task(run_plan_generation, scheduled)
+    return demo_db.staff_checklist_plan(session, case_id) or {"case_id": case_id, "status": "generating"}
+
+
+@router.get("/perf/summary", summary="성능 — LLM 호출 응답시간 기록/집계")
+def perf_summary(task: str | None = None, limit: int = 50,
+                 session: Session = Depends(get_session)) -> dict[str, Any]:
+    """검토계획 생성·스킬 호출의 소요시간 통계(평균/최소/최대/p50/p95) + 최근 기록.
+
+    task 예: 'checklist_plan_agentic', 'skill:verdict'. 원본은 DB(performance_logs),
+    사람이 읽는 사본은 PERFORMANCE_LOG.md 에 있다(docs/PERFORMANCE.md 참고).
+    """
+    return perf.summary(session, task=task, limit=limit)
+
+
+@router.post("/staff/checklist-plan/{case_id}/approve", summary="사건접수 — 검토계획 승인")
+def approve_checklist_plan(case_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
+    """직원이 검토계획을 승인 → 사건이 '검토 중'으로 전이(민원인/직원 양쪽 화면 반영)."""
+    try:
+        return demo_db.approve_plan(session, case_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/staff/cases/{case_id}", summary="처리현황 — 사건 상세 원장/AI검증/유사사례")
@@ -85,8 +128,8 @@ def complainant_home() -> dict[str, Any]:
 
 
 @router.get("/complainant/progress", summary="민원인 진행현황(5단계 타임라인)")
-def complainant_progress() -> dict[str, Any]:
-    return demo_store.complainant_progress()
+def complainant_progress(session: Session = Depends(get_session)) -> dict[str, Any]:
+    return demo_db.complainant_progress(session)
 
 
 @router.get("/complainant/history", summary="민원인 민원 이력")
@@ -112,6 +155,16 @@ class ComplaintSubmission(BaseModel):
     attachments: list[str] = Field(default_factory=list, description="첨부 파일명 목록(시연용).")
 
 
-@router.post("/complainant/complaints", summary="신규 민원 제출(시연용 접수)")
-def submit_complaint(req: ComplaintSubmission) -> dict[str, Any]:
-    return demo_store.submit_complaint(req.product_type, req.facts, req.attachments)
+@router.post("/complainant/complaints", summary="신규 민원 제출 → 접수 + AI 검토계획 자동 생성")
+def submit_complaint(
+    req: ComplaintSubmission,
+    background: BackgroundTasks,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """민원인 제출을 DB 에 접수하고, 접수 즉시 실제 LLM 검토계획 생성을 백그라운드로 예약한다.
+
+    응답은 즉시 반환(접수번호+상태). 검토계획은 직원 화면이 폴링하며 채워진다.
+    """
+    result = demo_db.submit_complaint(session, req.product_type, req.facts, req.attachments)
+    background.add_task(run_plan_generation, result["case_id"])
+    return result

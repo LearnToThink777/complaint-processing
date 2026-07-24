@@ -96,7 +96,11 @@ export const api = {
   // 직원
   staffSummary: () => get('/api/staff/summary', 'staffSummary'),
   staffIntake: () => get('/api/staff/intake', 'staffIntake'),
-  staffChecklistPlan: (id) => get(`/api/staff/checklist-plan/${id}`, 'staffChecklistPlan'),
+  // 검토계획은 서버 폴링이 핵심(plan_generating → plan_ready). 폴백을 주지 않아야
+  // 서버 정상 중 정적 픽스처로 새어 '생성 중'이 안 뜨는 일을 막는다.
+  staffChecklistPlan: (id) => get(`/api/staff/checklist-plan/${id}`),
+  staffGeneratePlan: (id) => live(`/api/staff/checklist-plan/${id}/generate`, {}),
+  staffApprovePlan: (id) => live(`/api/staff/checklist-plan/${id}/approve`, {}),
   staffCase: (id) => get(`/api/staff/cases/${id}`, 'staffCase'),
   staffHistory: (customer) =>
     get(`/api/staff/history${customer ? `?customer=${encodeURIComponent(customer)}` : ''}`, 'staffHistory'),

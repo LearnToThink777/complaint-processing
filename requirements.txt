@@ -9,3 +9,5 @@ sentence-transformers>=3,<6
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 httpx>=0.27,<1
+# 영속 계층(db.py/models.py) — 민원 접수→검토계획→승인 흐름을 SQLite 에 저장(더미 대체).
+SQLAlchemy>=2,<3

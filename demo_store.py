@@ -36,11 +36,15 @@ CRITIC_BADGES = {
     "BLOCK": {"ko": "BLOCK", "tone": "bad", "desc": "근거 밖 인용 · 차단"},
 }
 
-# 처리 상태 흐름(직원 화면). agent.py 의 status 전이와 맞춘 라벨.
+# 처리 상태 흐름(직원 화면). 접수→검토계획→승인→처리 상태머신 라벨.
+# (demo_db/agentic_plan 의 status 전이와 맞춘다 — 상태 라벨의 단일 진실 원천.)
 CASE_STATUS = {
     "intake": {"ko": "접수 대기", "tone": "muted"},
     "referred": {"ko": "이관됨", "tone": "info"},
+    "plan_generating": {"ko": "AI 검토계획 생성 중", "tone": "info"},
+    "plan_ready": {"ko": "검토계획 대기", "tone": "warn"},
     "reviewing": {"ko": "검토 중", "tone": "info"},
+    "verdict": {"ko": "판정 완료", "tone": "info"},
     "negotiating": {"ko": "협의 중", "tone": "warn"},
     "closed": {"ko": "종결", "tone": "good"},
 }
@@ -72,37 +76,11 @@ STAFF_RECENT_CASES = [
 
 
 # ---------------------------------------------------------------------------
-# 직원 대시보드 — 사건접수(신규 이관 목록)
+# 직원 대시보드 — 사건접수(신규 이관 목록) + AI 검토계획
 # ---------------------------------------------------------------------------
-
-STAFF_INTAKE_CASES = [
-    {"case_id": "C-2024-05130", "customer": "김서연", "type": "ELS 불완전판매", "intake_date": "2024-05-21", "track": "legal"},
-    {"case_id": "C-2024-05129", "customer": "오민석", "type": "DLF 손실", "intake_date": "2024-05-21", "track": "legal"},
-    {"case_id": "C-2024-05128", "customer": "배지현", "type": "펀드 설명부족", "intake_date": "2024-05-21", "track": "legal"},
-    {"case_id": "C-2024-05127", "customer": "유재현", "type": "투자권유 부적정", "intake_date": "2024-05-21", "track": "legal"},
-    {"case_id": "C-2024-05126", "customer": "한지은", "type": "예금 만기 미이행", "intake_date": "2024-05-21", "track": "legal"},
-    {"case_id": "C-2024-05125", "customer": "정무진", "type": "신용카드 분쟁", "intake_date": "2024-05-21", "track": "general"},
-    {"case_id": "C-2024-05124", "customer": "김하늘", "type": "보험금 지급거절", "intake_date": "2024-05-21", "track": "legal"},
-]
-
-# 선택 사건의 AI 자동 검토계획(#0 결과 형태). 근거 법조문 태그 포함, 승인 전 상태.
-# fixtures.json 의 checklist 와 같은 뼈대를 쓰되, 접수 단계라 status=대기.
-STAFF_CHECKLIST_PLANS = {
-    "C-2024-05130": {
-        "case_id": "C-2024-05130",
-        "classification": "ELS 불완전판매",
-        "track": "legal",
-        "items": [
-            {"n": 1, "item": "적합성 원칙 위반 여부", "law": "금융소비자보호법 제17조", "status": "pending"},
-            {"n": 2, "item": "설명의무 이행 여부", "law": "금융소비자보호법 제19조", "status": "pending"},
-            {"n": 3, "item": "불완전판매 판단", "law": "금융소비자보호법 제20조", "status": "pending"},
-            {"n": 4, "item": "손해 인과관계", "law": "민법 제750조", "status": "pending"},
-            {"n": 5, "item": "손해액 산정 적정성", "law": "분쟁조정 기준", "status": "pending"},
-            {"n": 6, "item": "배상책임 범위", "law": "분쟁조정위 결정례 2024-1041", "status": "pending"},
-        ],
-        "reasoning": "안정추구형 고객 대상 고위험 ELS 판매 정황. 적합성·설명의무 중심으로 6개 항목 검토 계획 수립.",
-    },
-}
+# 예전 STAFF_INTAKE_CASES / STAFF_CHECKLIST_PLANS 더미는 제거됐다. 접수 사건과
+# AI 자동 검토계획은 이제 DB(models.Case/ReviewPlan)에 저장되며 demo_db.py 가 조회한다.
+# 시드 이관 사건은 db.py::_SEED_INTAKE 가 넣는다.
 
 
 # ---------------------------------------------------------------------------
@@ -236,23 +214,8 @@ COMPLAINANT_HOME = {
     ],
 }
 
-# 진행현황 — 5단계 타임라인(민원인 시점). current 인덱스가 현재 단계.
-COMPLAINANT_PROGRESS = {
-    "case_id": "C-2025-06-001",
-    "title": "ELS 불완전판매 관련 민원",
-    "intake_date": "2025-06-01",
-    "expected_completion": "2025-07-31",
-    "days_left": 15,
-    "risk": True,
-    "current": 1,  # 0-indexed → '검토 중'
-    "steps": [
-        {"no": 1, "key": "intake", "title": "접수", "date": "2025-06-01", "body": "민원이 정상적으로 접수되었어요. 담당자가 내용을 확인하고 있어요."},
-        {"no": 2, "key": "reviewing", "title": "검토 중", "date": "2025-06-05 ~", "body": "법률 검토와 사실관계 확인을 진행하고 있어요. 조금만 기다려주세요!"},
-        {"no": 3, "key": "verdict", "title": "판정 완료", "date": None, "body": "검토가 끝나면 판정 결과를 안내드려요."},
-        {"no": 4, "key": "negotiation", "title": "협의", "date": None, "body": "필요 시 금융회사와 협의가 진행돼요."},
-        {"no": 5, "key": "closed", "title": "종결", "date": None, "body": "모든 절차가 완료되면 종결 안내를 드려요."},
-    ],
-}
+# 진행현황(5단계 타임라인)은 이제 DB 기반이다 — demo_db.complainant_progress() 가
+# 최근 민원인 Case 의 status 를 상태머신으로 풀어 steps/current 를 만든다.
 
 COMPLAINANT_HISTORY = [
     {"case_id": "C-2025-06-001", "type": "ELS 불완전판매 관련 민원", "intake_date": "2025-06-01", "status": "reviewing", "status_ko": "진행중", "closed_at": None, "expected_completion": "2025-07-31"},
@@ -271,8 +234,7 @@ COMPLAINANT_PRODUCT_TYPES = [
     {"key": "etc", "label": "기타"},
 ]
 
-# 민원인이 제출한 신규 민원을 담는 메모리 저장소(시연용 — 서버 재시작 시 초기화).
-SUBMITTED_COMPLAINTS: list[dict[str, Any]] = []
+# (민원인 제출은 이제 DB(models.Case)에 저장된다 — demo_db.submit_complaint 참조.)
 
 
 # ---------------------------------------------------------------------------
@@ -301,14 +263,6 @@ def staff_recent_cases() -> list[dict[str, Any]]:
         item["outcome"] = _decorate_outcome(row["outcome"])
         out.append(item)
     return out
-
-
-def staff_intake() -> list[dict[str, Any]]:
-    return STAFF_INTAKE_CASES
-
-
-def staff_checklist_plan(case_id: str) -> dict[str, Any] | None:
-    return STAFF_CHECKLIST_PLANS.get(case_id) or next(iter(STAFF_CHECKLIST_PLANS.values()), None)
 
 
 def staff_case_detail(case_id: str) -> dict[str, Any] | None:
@@ -347,10 +301,6 @@ def complainant_home() -> dict[str, Any]:
     return COMPLAINANT_HOME
 
 
-def complainant_progress() -> dict[str, Any]:
-    return COMPLAINANT_PROGRESS
-
-
 def complainant_history() -> list[dict[str, Any]]:
     return COMPLAINANT_HISTORY
 
@@ -361,19 +311,3 @@ def complainant_profile() -> dict[str, Any]:
 
 def complainant_product_types() -> list[dict[str, Any]]:
     return COMPLAINANT_PRODUCT_TYPES
-
-
-def submit_complaint(product_type: str, facts: str, attachments: list[str] | None = None) -> dict[str, Any]:
-    """민원인이 제출한 신규 민원을 접수(시연용 메모리 저장). 접수번호를 발급해 돌려준다."""
-    seq = len(SUBMITTED_COMPLAINTS) + 1
-    record = {
-        "case_id": f"C-2025-06-{100 + seq:03d}",
-        "product_type": product_type,
-        "facts": facts,
-        "attachments": attachments or [],
-        "status": "intake",
-        "status_ko": "접수 완료",
-        "received_at": "방금 전",
-    }
-    SUBMITTED_COMPLAINTS.append(record)
-    return record

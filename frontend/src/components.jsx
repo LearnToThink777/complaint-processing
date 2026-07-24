@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 
-// 비동기 로더 훅 — 로딩/에러/데이터 상태를 한 번에.
+// 비동기 로더 훅 — 로딩/에러/데이터 상태를 한 번에. reload()로 수동 재요청 가능.
 export function useAsync(fn, deps = []) {
   const [state, setState] = useState({ loading: true, data: null, error: null })
+  const [tick, setTick] = useState(0)
   useEffect(() => {
     let alive = true
     setState({ loading: true, data: null, error: null })
@@ -13,8 +14,8 @@ export function useAsync(fn, deps = []) {
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  return state
+  }, [...deps, tick])
+  return { ...state, reload: () => setTick((t) => t + 1) }
 }
 
 export function Loading({ label = '불러오는 중…' }) {

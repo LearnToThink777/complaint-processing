@@ -15,6 +15,9 @@ venv/
 # law.go.kr 수집 캐시·색인 체크포인트 (collect_corpus.py / build_index.py 산출물 — 재현 가능)
 data/
 
+# 성능 기록 노트(perf.py 가 런타임에 자동 생성/추가 — 로컬 전용, docs/PERFORMANCE.md 참고)
+PERFORMANCE_LOG.md
+
 # 프론트엔드(Vite/React) — 의존성은 커밋하지 않는다. 빌드 산출물(ui/)은 시연 편의를 위해 커밋 유지.
 frontend/node_modules/
 frontend/.vite/

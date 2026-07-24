@@ -1,75 +1,118 @@
-import { useEffect, useState } from 'react'
-import { api, liveApi, PROVIDERS } from '../api.js'
-import { useAsync, Loading, Badge, ProviderSelect, LiveTag } from '../components.jsx'
+import { useEffect, useRef, useState } from 'react'
+import { api } from '../api.js'
+import { useAsync, Loading, Badge } from '../components.jsx'
 
-// 접수 목록의 유형 → 검색 질의로 쓸 사실관계(라이브 검토계획 생성 입력).
-const FACTS_BY_CASE = {
-  'C-2024-05130': '안정추구형으로 분류된 개인 고객에게 원금 비보장 고위험 ELS를 판매. 원금손실 위험 고지가 불충분했고, 판매 녹취 일부 누락 및 서명 불일치.',
+// 검토계획 상태 → 화면 배지.
+const PLAN_BADGE = {
+  pending: { ko: '생성 전', tone: 'muted' },
+  generating: { ko: 'AI 생성 중', tone: 'info' },
+  ready: { ko: '검토계획 대기', tone: 'warn' },
+  approved: { ko: '승인됨', tone: 'good' },
+  failed: { ko: '생성 실패', tone: 'bad' },
 }
 
 export default function Intake() {
-  const { loading, data: cases } = useAsync(() => api.staffIntake(), [])
+  const { loading, data: cases, reload } = useAsync(() => api.staffIntake(), [])
   const [selected, setSelected] = useState(null)
   const [plan, setPlan] = useState(null)
   const [planLoading, setPlanLoading] = useState(false)
-  const [approved, setApproved] = useState(false)
-
-  // 라이브(실제 LLM) 상태
-  const [provider, setProvider] = useState('mlapi-mini')
-  const [live, setLive] = useState(null) // {items, classification, reasoning, ms}
-  const [liveRunning, setLiveRunning] = useState(false)
-  const [liveError, setLiveError] = useState(null)
+  const [busy, setBusy] = useState(false) // 생성/승인 요청 진행 중
+  const [error, setError] = useState(null)
+  const pollRef = useRef(null)
 
   useEffect(() => {
     if (cases && cases.length && !selected) setSelected(cases[0].case_id)
   }, [cases, selected])
 
+  // 선택된 사건의 검토계획을 불러오고, 생성 중이면 폴링한다.
+  const stopPoll = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  const fetchPlan = async (id) => {
+    try {
+      const p = await api.staffChecklistPlan(id)
+      setPlan(p)
+      return p
+    } catch (e) {
+      setError(String(e.message || e))
+      return null
+    }
+  }
+
   useEffect(() => {
+    stopPoll()
+    setPlan(null)
+    setError(null)
     if (!selected) return
     setPlanLoading(true)
-    setApproved(false)
-    setLive(null)
-    setLiveError(null)
-    api.staffChecklistPlan(selected).then((p) => {
-      setPlan(p)
+    fetchPlan(selected).then((p) => {
       setPlanLoading(false)
+      if (p && p.status === 'generating') startPolling(selected)
     })
+    return stopPoll
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected])
 
-  const runLive = async () => {
+  const startPolling = (id) => {
+    stopPoll()
+    pollRef.current = setInterval(async () => {
+      const p = await fetchPlan(id)
+      if (!p || p.status !== 'generating') stopPoll()
+    }, 3000)
+  }
+
+  const runGenerate = async () => {
     if (!selected) return
-    const sel = cases.find((c) => c.case_id === selected)
-    const facts = FACTS_BY_CASE[selected] || `${sel?.type} 관련 민원. 사실관계를 검토한다.`
-    setLiveRunning(true)
-    setLiveError(null)
-    setLive(null)
-    const t0 = performance.now()
+    setBusy(true)
+    setError(null)
     try {
-      const res = await liveApi.checklistPlan(facts, 'ELS mis-selling', provider)
-      setLive({ ...res, ms: Math.round(performance.now() - t0) })
+      const p = await api.staffGeneratePlan(selected)
+      setPlan(p)
+      if (p.status === 'generating') startPolling(selected)
     } catch (e) {
-      setLiveError(String(e.message || e))
+      setError(String(e.message || e))
     } finally {
-      setLiveRunning(false)
+      setBusy(false)
+    }
+  }
+
+  const runApprove = async () => {
+    if (!selected) return
+    setBusy(true)
+    setError(null)
+    try {
+      const p = await api.staffApprovePlan(selected)
+      setPlan(p)
+      reload() // 목록에서 검토 착수한 사건이 접수 목록을 빠지도록 갱신
+    } catch (e) {
+      setError(String(e.message || e))
+    } finally {
+      setBusy(false)
     }
   }
 
   if (loading || !cases) return <Loading />
 
-  // 라이브 결과가 있으면 그걸, 없으면 시드 계획을 렌더
-  const shownItems = live?.items ?? plan?.items ?? []
+  const status = plan?.status
+  const items = plan?.items ?? []
+  const approved = status === 'approved'
+  const badge = PLAN_BADGE[status] || PLAN_BADGE.pending
 
   return (
     <div>
       <div className="page-head">
         <h1>사건접수</h1>
-        <p>신규 이관된 사건 목록입니다. 사건을 선택하면 AI 자동 검토계획을 확인할 수 있어요.</p>
+        <p>신규 이관·제출된 사건 목록입니다. 사건을 선택하면 AI 자동 검토계획을 확인·승인할 수 있어요.</p>
       </div>
 
       <div className="split">
         <div className="card">
           <div className="panel-head">
-            <h2>신규 이관 사건</h2>
+            <h2>신규 사건</h2>
             <span className="muted" style={{ fontSize: 12.5 }}>{cases.length}건</span>
           </div>
           <table className="table">
@@ -101,48 +144,58 @@ export default function Intake() {
         <div className="card">
           <div className="panel-head">
             <h2>🤖 AI 자동 검토계획</h2>
-            {live ? <LiveTag provider={provider} providers={PROVIDERS} ms={live.ms} /> : <span className="badge muted">데모 데이터</span>}
+            <Badge tone={badge.tone}>{badge.ko}</Badge>
           </div>
           <div className="panel-pad">
-            {/* 라이브 실행 컨트롤 */}
-            <div className="live-bar">
-              <ProviderSelect value={provider} onChange={setProvider} providers={PROVIDERS} />
-              <button className="btn primary" onClick={runLive} disabled={liveRunning}>
-                {liveRunning ? '실제 AI 검토 중…' : '⚡ 실제 AI로 검토계획 생성'}
-              </button>
-            </div>
+            {error && <div className="alert bad" style={{ marginBottom: 12 }}>⚠ {error}</div>}
 
-            {liveRunning && (
-              <div className="live-progress">
-                <span className="spinner" /> 실제 LLM이 사건 사실관계를 읽고 검토 항목을 도출하는 중… (수십 초 소요)
-              </div>
-            )}
-            {liveError && <div className="alert bad" style={{ marginBottom: 12 }}>⚠ 실제 호출 실패: {liveError}</div>}
-
-            {planLoading && !live ? (
+            {planLoading && !plan ? (
               <Loading label="검토계획 불러오는 중…" />
+            ) : status === 'generating' ? (
+              <div className="live-progress">
+                <span className="spinner" /> 실제 LLM이 사건 사실을 읽고 법령·결정례를 검색해 검토 항목을 도출하는 중… (수십 초 소요)
+              </div>
+            ) : status === 'pending' ? (
+              <>
+                <p className="muted" style={{ fontSize: 12.5, marginBottom: 14 }}>
+                  아직 검토계획이 없습니다. 실제 AI로 이 사건의 검토 항목을 생성하세요.
+                </p>
+                <button className="btn primary block" onClick={runGenerate} disabled={busy}>
+                  {busy ? '요청 중…' : '⚡ AI 검토계획 생성'}
+                </button>
+              </>
             ) : (
               <>
-                {(live?.reasoning || plan?.reasoning) && (
+                {plan?.reasoning && (
                   <p className="muted" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 14 }}>
-                    {live ? `분류: ${live.classification} · ` : ''}
-                    {live?.reasoning || plan?.reasoning}
+                    분류: {plan.classification} · {plan.reasoning}
+                    {plan.duration_ms != null && (
+                      <span> · 생성 {(plan.duration_ms / 1000).toFixed(1)}초
+                        {plan.provider === 'fallback' ? ' (폴백)' : ''}</span>
+                    )}
                   </p>
                 )}
-                {shownItems.map((it, i) => (
+                {items.map((it, i) => (
                   <div key={i} className="checklist-item">
-                    <span className={`check-box ${approved ? 'checked' : ''}`}>{approved ? '✓' : ''}</span>
+                    <span className={`check-box ${it.status === 'approved' ? 'checked' : ''}`}>
+                      {it.status === 'approved' ? '✓' : ''}
+                    </span>
                     <span className="check-item-name">{it.item}</span>
                     <span className="law-tag">{it.law}</span>
                   </div>
                 ))}
+                {items.length === 0 && (
+                  <p className="muted" style={{ fontSize: 12.5 }}>
+                    법률 검토 항목이 없습니다(일반 안내 트랙일 수 있어요).
+                  </p>
+                )}
                 <button
                   className="btn primary block"
                   style={{ marginTop: 16 }}
-                  onClick={() => setApproved(true)}
-                  disabled={approved}
+                  onClick={runApprove}
+                  disabled={approved || busy}
                 >
-                  {approved ? '✓ 검토계획 승인됨' : '검토계획 승인'}
+                  {approved ? '✓ 검토계획 승인됨 (검토 중)' : busy ? '처리 중…' : '검토계획 승인'}
                 </button>
               </>
             )}
