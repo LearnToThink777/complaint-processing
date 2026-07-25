@@ -43,7 +43,12 @@ class DualDisclosure(BaseModel):
     """
 
     complainant_title: str = Field(description="민원인용 안내 제목. 예: '진행 안내 #3 · 민원인용'.")
-    complainant_body: str = Field(description="민원인용 본문. 법률 용어를 쓰지 않고 쉽고 공감적으로. 판정을 단정하지 않는다.")
+    complainant_body: str = Field(description=(
+        "민원인용 본문. 화자는 처리 담당자, 읽는 이는 일반 소비자 개인 — 담당자가 고객님께 안내·설명하는 "
+        "방향으로 쓴다(민원인이 문의·요청하는 투 금지). '귀 기관/귀사' 등 상대를 기관으로 취급하는 호칭 금지. "
+        "법률 용어·조문·내부 처리 수치(남은 검토 건수 등) 금지. 서류·절차·연락처·기관명·지점을 지어내지 않는다 "
+        "— 근거에 없으면 '담당자가 확인 후 개별 안내'로 열어 둔다. 쉽고 공감적인 존댓말, 판정 단정 금지."
+    ))
     supervisor_title: str = Field(description="회사·감독원용 리포트 제목. 예: '검토 결과 #3 · 회사·감독원용'.")
     supervisor_body: str = Field(description="감독원용 본문. 적용 법률·판정·근거·남은 검토 건수를 포함한 기술적 요약.")
 
