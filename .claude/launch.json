@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "complaint-api",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-c", "import sys, os; sys.path.insert(0, os.path.dirname(os.getcwd())); import uvicorn; uvicorn.run('complaint_processing.api:app', host='127.0.0.1', port=8000)"],
+      "port": 8000
+    },
+    {
+      "name": "complaint-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

@@ -1,48 +1,51 @@
 import { useState } from 'react'
 import { api } from '../api.js'
-import { useAsync, Loading, Badge, OutcomeBadge, Gauge } from '../components.jsx'
+import { useAsync, Loading, OutcomeBadge } from '../components.jsx'
 
 export default function History() {
   const [query, setQuery] = useState('')
-  const { loading, data } = useAsync(() => api.staffHistory(), [])
-  if (loading || !data) return <Loading />
+  // 조회할 고객명(검색 버튼을 눌러야 반영 — 입력할 때마다 요청하지 않는다).
+  const [customer, setCustomer] = useState(null)
+  const { loading, data } = useAsync(() => api.staffHistory(customer), [customer])
+  if (loading) return <Loading />
+  if (!data) return <div className="card"><div className="panel-pad"><p className="muted">이력을 찾을 수 없습니다.</p></div></div>
 
   return (
     <div>
       <div className="page-head">
         <h1>고객 이력 조회</h1>
-        <p>고객별 과거 민원 이력과 이번 판정의 일관성을 확인하세요.</p>
+        <p>같은 고객이 과거에 어떤 민원을 접수했고 각각 어떤 판정이 나왔는지 확인하세요.</p>
       </div>
 
       <div className="card" style={{ padding: 16, marginBottom: 18 }}>
-        <div className="row gap8">
+        <form className="row gap8" onSubmit={(e) => { e.preventDefault(); setCustomer(query.trim() || null) }}>
           <input
             className="chip-select"
             style={{ flex: 1, maxWidth: 340 }}
-            placeholder="고객명 또는 고객번호 입력"
+            placeholder="고객명 입력"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button className="btn primary">검색</button>
+          <button className="btn primary" type="submit">검색</button>
           <div style={{ marginLeft: 'auto' }} className="fg2">
             고객명 <strong style={{ color: 'var(--fg)' }}>{data.customer}</strong>
-            <span className="muted" style={{ marginLeft: 8 }}>(고객번호: {data.customer_no})</span>
+            <span className="muted" style={{ marginLeft: 8 }}>({data.rows.length}건)</span>
           </div>
-        </div>
+        </form>
       </div>
 
       <div className="card">
         <div className="panel-head"><h2>과거 민원 이력</h2></div>
         <table className="table">
           <thead>
+            {/* '일관성 점수'는 계산 규칙 없이 숫자만 그럴듯했던 지표라 뺐다. 대신 그 사건의
+                실제 판정 원장 요약(위반 n · 해당없음 m)을 보여준다. */}
             <tr>
               <th>사건번호</th>
               <th>접수일</th>
               <th>유형</th>
-              <th>판정 결과</th>
-              <th>처리 결과</th>
-              <th>반복 패턴</th>
-              <th>일관성 점수 <span className="muted" style={{ fontWeight: 400 }}>(이번 판정 대비)</span></th>
+              <th>처리 상태</th>
+              <th>판정 원장</th>
             </tr>
           </thead>
           <tbody>
@@ -53,8 +56,6 @@ export default function History() {
                 <td>{r.type}</td>
                 <td><OutcomeBadge value={r.outcome} /></td>
                 <td className="fg2">{r.result}</td>
-                <td>{r.repeat ? <Badge tone="bad">{r.repeat}</Badge> : <span className="muted">-</span>}</td>
-                <td><Gauge value={r.consistency} label="점" /></td>
               </tr>
             ))}
           </tbody>

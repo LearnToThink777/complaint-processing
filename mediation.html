@@ -438,23 +438,38 @@ function renderLiveUI(){
     : '「중재 시작」을 누르면 세션이 열립니다.';
 }
 
+// ?bind=C-2026-07-113 로 열면 이 콘솔의 진행이 '그 민원 사건'에 저장된다.
+// 사건 스코프 엔드포인트를 타므로 턴마다 서버가 레코드를 DB 에 스냅샷하고, 그 결과가
+// 직원 처리현황과 민원인 진행현황 양쪽 중재 카드에 그대로 나타난다. bind 가 없으면
+// 예전처럼 사건과 무관한 데모 세션(/api/mediation/live/*)으로 돈다.
+const BOUND_CASE = new URLSearchParams(location.search).get('bind');
+
+// 사건 스코프 응답(mediation payload)과 데모 세션 응답의 필드 이름을 하나로 맞춘다.
+function applyLive(d){
+  const rec = d.record || {};
+  live.sid[si]=d.sid; live.done[si]=!!d.done; live.turns[si]=d.turn_index||0;
+  live.max[si]=d.max_turns||0; live.fell[si]=!!d.fell_back;
+  liveData[si]=rec; if(mode==='live') DATA=liveData;
+  step=Math.max(0, (rec.log||[]).length-1);
+}
+
 async function liveStart(){
-  const r=await fetch('/api/mediation/live/start',{method:'POST',headers:{'Content-Type':'application/json'},
+  const url = BOUND_CASE
+    ? `/api/staff/cases/${encodeURIComponent(BOUND_CASE)}/mediation/start`
+    : '/api/mediation/live/start';
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({scenario_id:STATIC[si].case_id, use_llm:true, provider:live.provider})});
   if(!r.ok) throw new Error('start '+r.status);
-  const d=await r.json();
-  live.sid[si]=d.sid; live.done[si]=d.done; live.turns[si]=d.turn_index; live.max[si]=d.max_turns; live.fell[si]=d.fell_back;
-  liveData[si]=d.record; if(mode==='live') DATA=liveData;
-  step=Math.max(0, d.record.log.length-1);
+  applyLive(await r.json());
 }
 
 async function liveTurn(){
-  const r=await fetch(`/api/mediation/live/${live.sid[si]}/turn`,{method:'POST'});
+  const url = BOUND_CASE
+    ? `/api/staff/cases/${encodeURIComponent(BOUND_CASE)}/mediation/turn`
+    : `/api/mediation/live/${live.sid[si]}/turn`;
+  const r=await fetch(url,{method:'POST'});
   if(!r.ok) throw new Error('turn '+r.status);
-  const d=await r.json();
-  live.done[si]=d.done; live.turns[si]=d.turn_index; live.fell[si]=d.fell_back;
-  liveData[si]=d.record; if(mode==='live') DATA=liveData;
-  step=Math.max(0, d.record.log.length-1);
+  applyLive(await r.json());
 }
 
 async function driveOnce(){
@@ -569,6 +584,19 @@ function bootFromNetwork(){
       step = Math.max(0, DATA[si].log.length-1);   // 더미는 종결 상태에서, 라이브는 빈 원장에서 시작
       render();
     }).catch(e=>{ document.body.innerHTML='<div class="wrap">중재 기록 로드 실패: '+e+'</div>'; });
+}
+
+// 사건에 묶여 열렸으면 그 사실을 헤더에 밝히고, 되돌아갈 링크도 그 사건으로 건다.
+if(BOUND_CASE){
+  const back=document.querySelector('.appbar .back');
+  if(back){ back.textContent=`← ${BOUND_CASE} 처리현황`; back.href='/ui/#/staff/status'; }
+  const top=document.querySelector('.wrap .top');
+  if(top){
+    const chip=document.createElement('span');
+    chip.className='caseid';
+    chip.textContent=`민원 ${BOUND_CASE} 에 기록 중`;
+    top.insertBefore(chip, top.querySelector('#exportSnap'));
+  }
 }
 
 if(window.__SNAPSHOT__) bootFromSnapshot(window.__SNAPSHOT__); else bootFromNetwork();

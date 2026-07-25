@@ -34,6 +34,9 @@ CRITIC_BADGES = {
     "PASS": {"ko": "PASS", "tone": "good", "desc": "근거 일치 · 자동 통과"},
     "ESCALATE": {"ko": "ESCALATE", "tone": "warn", "desc": "불확실 · 사람 확인 필요"},
     "BLOCK": {"ko": "BLOCK", "tone": "bad", "desc": "근거 밖 인용 · 차단"},
+    # 담당자가 AI 판정을 직접 고쳐 확정한 행. AI 신뢰도 검증의 대상이 아니다(검증할 AI 산출물이
+    # 아니라 사람의 결정이므로) — 배지 자리에 '누가 정했는지'를 대신 표시한다.
+    "CONFIRMED": {"ko": "담당자 확정", "tone": "info", "desc": "담당자가 직접 판정 · AI 검증 대상 아님"},
 }
 
 # 처리 상태 흐름(직원 화면). 접수→검토계획→승인→처리 상태머신 라벨.
@@ -44,6 +47,7 @@ CASE_STATUS = {
     "plan_generating": {"ko": "AI 검토계획 생성 중", "tone": "info"},
     "plan_ready": {"ko": "검토계획 대기", "tone": "warn"},
     "reviewing": {"ko": "검토 중", "tone": "info"},
+    "verdict_generating": {"ko": "AI 판정 생성 중", "tone": "info"},
     "verdict": {"ko": "판정 완료", "tone": "info"},
     "negotiating": {"ko": "협의 중", "tone": "warn"},
     "closed": {"ko": "종결", "tone": "good"},
@@ -54,25 +58,9 @@ CASE_STATUS = {
 # 직원 대시보드 — 홈
 # ---------------------------------------------------------------------------
 
-STAFF_SUMMARY = {
-    "officer": "홍길동",
-    "team": "준법감시팀",
-    "cards": [
-        {"key": "todo", "label": "오늘 처리할 항목", "value": 24, "unit": "건", "hint": "전체 32건", "tone": "info"},
-        {"key": "due_soon", "label": "기한 임박 사건", "value": 7, "unit": "건", "hint": "3일 이내 마감", "tone": "bad"},
-        {"key": "ai_wait", "label": "AI 검토 대기", "value": 18, "unit": "건", "hint": "검토 필요", "tone": "warn"},
-        {"key": "done_today", "label": "오늘 완료", "value": 15, "unit": "건", "hint": "목표 20건", "tone": "good"},
-    ],
-}
-
-# 최근 처리한 사건(홈 하단 테이블). outcome 은 사람이 내린 최종 결정.
-STAFF_RECENT_CASES = [
-    {"case_id": "C-2024-05123", "customer": "김민수", "type": "ELS 불완전판매", "outcome": "accepted", "processed_at": "2025-05-20 16:42", "officer": "홍길동"},
-    {"case_id": "C-2024-05122", "customer": "이영희", "type": "DLF 손실", "outcome": "partial", "processed_at": "2025-05-20 15:31", "officer": "홍길동"},
-    {"case_id": "C-2024-05121", "customer": "박준혁", "type": "예금상품 설명부족", "outcome": "rejected", "processed_at": "2025-05-20 14:22", "officer": "최지영"},
-    {"case_id": "C-2024-05120", "customer": "정다은", "type": "투자권유 부적정", "outcome": "accepted", "processed_at": "2025-05-20 11:10", "officer": "홍길동"},
-    {"case_id": "C-2024-05119", "customer": "최성민", "type": "신용카드 과다수수료", "outcome": "partial", "processed_at": "2025-05-20 10:05", "officer": "최지영"},
-]
+# 직원 홈 요약 카드(24/7/18/15)와 '최근 처리한 사건' 5행 더미는 제거됐다. 사건을 아무리
+# 접수해도 숫자가 꿈쩍하지 않는 화면이었다 — 이제 demo_db.staff_summary()/staff_recent_cases()
+# 가 cases/stage_events 를 실제로 세어 돌려준다.
 
 
 # ---------------------------------------------------------------------------
@@ -84,66 +72,21 @@ STAFF_RECENT_CASES = [
 
 
 # ---------------------------------------------------------------------------
-# 직원 대시보드 — 처리현황(사건 상세 원장 + AI 검증 + 유사사례 + 기한/재협상)
+# 직원 대시보드 — 처리현황(사건 상세 원장 + AI 검증 + 유사사례)
 # ---------------------------------------------------------------------------
-
-STAFF_CASE_DETAILS = {
-    "C-2024-05130": {
-        "case_id": "C-2024-05130",
-        "type": "ELS 불완전판매",
-        "customer": "김서연",
-        "status": "reviewing",
-        "due_date": "2024-05-23",
-        "days_left": 2,
-        "over_deadline_risk": True,
-        # 사건 원장 — 각 행: AI 규정 판정(ko/verdict) + AI 신뢰도 검증 배지(critic)
-        "ledger": [
-            {"item": "적합성 원칙 위반 여부", "code": "금소법 §17", "verdict": "위반", "critic": "PASS"},
-            {"item": "설명의무 이행 여부", "code": "금소법 §19", "verdict": "위반", "critic": "PASS"},
-            {"item": "불완전판매 판단", "code": "금소법 §20", "verdict": "해당", "critic": "PASS"},
-            {"item": "손해 인과관계", "code": "민법 §750", "verdict": "인과관계 인정", "critic": "ESCALATE"},
-            {"item": "손해액 산정 적정성", "code": "배상 5750", "verdict": "일부 인정", "critic": "PASS"},
-            {"item": "배상책임 범위", "code": "결정례 2024-1041", "verdict": "50% 배상", "critic": "BLOCK"},
-        ],
-        # 유사 과거사례(RAG 검색 결과 형태) — 유사도 %
-        "similar_cases": [
-            {"case_id": "C-2024-01045", "title": "ELS 불완전판매 · 50% 배상", "similarity": 92, "closed_at": "2024-02-14", "outcome": "accepted", "outcome_ko": "고객 수용"},
-            {"case_id": "C-2023-08912", "title": "ELS 불완전판매 · 40% 배상", "similarity": 85, "closed_at": "2023-11-03", "outcome": "partial", "outcome_ko": "조정 성립"},
-            {"case_id": "C-2023-07654", "title": "ELS 불완전판매 · 60% 배상", "similarity": 78, "closed_at": "2023-09-21", "outcome": "accepted", "outcome_ko": "고객 수용"},
-        ],
-        # 재협상 자료 검토(사람이 결정, 에이전트는 자료만 정리)
-        "renegotiation": {
-            "attachments": [
-                {"name": "재협상_안_20240521.pdf", "size": "1.2MB", "uploaded_at": "2024-05-21 14:33"},
-            ],
-            "note": "예상 완료일이 처리 기한을 초과할 위험. 재협상 자료 검토 후 담당자가 새 기한을 결정합니다.",
-        },
-    },
-}
+# 예전의 STAFF_CASE_DETAILS(단일 하드코딩 사건) 더미는 제거됐다. 처리현황은 이제
+# 실제 DB(models.Case + 승인된 ReviewPlan 의 판정 컬럼)를 조회한다 — demo_db.staff_case_detail.
+# 사건 원장(판정 결과)은 승인 후 verdict_batch LLM 이 채우고(case_ai.run_verdict_generation),
+# 유사사례는 사건별 접수 내용으로 실검색한다(case_ai.search_similar_for_case).
 
 
 # ---------------------------------------------------------------------------
 # 직원 대시보드 — 이력(고객별 과거 민원 + 반복 패턴 + 일관성 점수)
 # ---------------------------------------------------------------------------
 
-# consistency_score 는 파생 지표: 같은 유형 과거 결정 대비 이번 결정의 정합도(높을수록 일관).
-STAFF_CUSTOMER_HISTORY = {
-    "김민수": {
-        "customer": "김민수",
-        "customer_no": "123-45-67890",
-        "repeat_pattern": {"type": "ELS 불완전판매", "count": 3, "message": "동일 유형(ELS 불완전판매) 민원이 총 3회 접수되었습니다."},
-        "rows": [
-            {"case_id": "C-2024-05123", "intake_date": "2024-05-20", "type": "ELS 불완전판매", "outcome": "accepted", "result": "배상 50%", "repeat": None, "consistency": 92},
-            {"case_id": "C-2023-11456", "intake_date": "2023-10-12", "type": "ELS 불완전판매", "outcome": "partial", "result": "배상 30%", "repeat": "동일 유형 2회차", "consistency": 85},
-            {"case_id": "C-2023-07331", "intake_date": "2023-06-21", "type": "펀드 설명부족", "outcome": "rejected", "result": "-", "repeat": None, "consistency": 76},
-            {"case_id": "C-2022-09110", "intake_date": "2022-08-05", "type": "보험금 지급거절", "outcome": "partial", "result": "배상 20%", "repeat": None, "consistency": 81},
-            {"case_id": "C-2022-04122", "intake_date": "2022-04-18", "type": "신용카드 수수료", "outcome": "accepted", "result": "환급", "repeat": None, "consistency": 90},
-            {"case_id": "C-2021-10203", "intake_date": "2021-10-30", "type": "대출금리 불만", "outcome": "rejected", "result": "-", "repeat": None, "consistency": 70},
-        ],
-    },
-}
-
-DEFAULT_HISTORY_CUSTOMER = "김민수"
+# 고객 이력 더미(하드코딩 6행 + consistency_score)는 제거됐다. consistency_score 는 근거
+# 없이 숫자만 그럴듯한 파생 지표였다 — 계산 규칙이 실제로 정의될 때 다시 넣는다.
+# 지금 이력은 demo_db.staff_customer_history() 가 cases 에서 그 고객 사건을 모아 만든다.
 
 
 # ---------------------------------------------------------------------------
@@ -165,14 +108,11 @@ STAFF_PROFILE = {
         {"key": "transfer", "label": "이관 사건 알림", "enabled": True},
         {"key": "system", "label": "시스템 공지 알림", "enabled": False},
     ],
-    "activity_log": [
-        {"at": "2024-05-21 09:12", "action": "로그인", "detail": "성공", "ip": "10.20.30.40"},
-        {"at": "2024-05-21 09:11", "action": "사건 검토", "detail": "C-2024-05130 열람", "ip": "10.20.30.40"},
-        {"at": "2024-05-20 08:55", "action": "자료 다운로드", "detail": "재협상_안_20240521.pdf", "ip": "10.20.30.40"},
-        {"at": "2024-05-20 16:42", "action": "사건 처리 완료", "detail": "C-2024-05123", "ip": "10.20.30.40"},
-        {"at": "2024-05-20 15:31", "action": "메모 작성", "detail": "C-2024-05122", "ip": "10.20.30.40"},
-    ],
-    "session": {"current_ip": "10.20.30.40", "last_login": "2024-05-21 09:12 (Chrome / Windows)"},
+    # activity_log 는 demo_db.staff_profile() 이 stage_events(실제 처리 이력)에서 채운다.
+    # 예전엔 '자료 다운로드 재협상_안_20240521.pdf' 같은 있지도 않은 활동이 박혀 있었다.
+    "activity_log": [],
+    # 로그인/세션 추적 기능이 없으므로 IP·최종 로그인 시각을 지어내지 않는다.
+    "session": {"current_ip": "", "last_login": ""},
 }
 
 
@@ -196,33 +136,9 @@ COMPLAINANT_PROFILE = {
     ],
 }
 
-COMPLAINANT_HOME = {
-    "greeting_name": "김지은",
-    "current_case": {
-        "case_id": "C-2025-06-001",
-        "title": "ELS 불완전판매 관련 민원",
-        "status": "reviewing",
-        "status_ko": "검토 중",
-        "intake_date": "2025-06-01",
-        "expected_completion": "2025-07-31",
-        "days_left": 15,
-        "risk": True,
-    },
-    "notices": [
-        {"icon": "megaphone", "title": "담당 검토가 시작되었어요", "body": "사실관계 확인을 위한 검토가 진행 중입니다.", "at": "2시간 전"},
-        {"icon": "document", "title": "추가 자료 제출 요청", "body": "계약서 사본을 추가로 제출해주세요.", "at": "1일 전"},
-    ],
-}
-
-# 진행현황(5단계 타임라인)은 이제 DB 기반이다 — demo_db.complainant_progress() 가
-# 최근 민원인 Case 의 status 를 상태머신으로 풀어 steps/current 를 만든다.
-
-COMPLAINANT_HISTORY = [
-    {"case_id": "C-2025-06-001", "type": "ELS 불완전판매 관련 민원", "intake_date": "2025-06-01", "status": "reviewing", "status_ko": "진행중", "closed_at": None, "expected_completion": "2025-07-31"},
-    {"case_id": "C-2025-03-015", "type": "펀드 환매 지연 관련 민원", "intake_date": "2025-03-15", "status": "closed", "status_ko": "종결", "closed_at": "2025-04-20"},
-    {"case_id": "C-2025-01-010", "type": "대출 중도상환 수수료 관련 민원", "intake_date": "2025-01-10", "status": "closed", "status_ko": "종결", "closed_at": "2025-02-05"},
-    {"case_id": "C-2024-11-020", "type": "보험금 지급 거절 관련 민원", "intake_date": "2024-11-20", "status": "closed", "status_ko": "종결", "closed_at": "2024-12-30"},
-]
+# 민원인 홈/이력/진행현황은 모두 DB 기반이다 — demo_db 의 complainant_home() /
+# complainant_history() / complainant_progress() 가 그 사람의 실제 Case·CaseMessage 를 읽는다.
+# (예전 COMPLAINANT_HOME·COMPLAINANT_HISTORY 하드코딩은 접수해도 안 바뀌는 화면이었다.)
 
 # 민원접수 폼 — 금융상품 유형 칩
 COMPLAINANT_PRODUCT_TYPES = [
@@ -242,67 +158,8 @@ COMPLAINANT_PRODUCT_TYPES = [
 # ---------------------------------------------------------------------------
 
 
-def _decorate_outcome(outcome: str | None) -> dict[str, Any] | None:
-    """결정 코드(accepted/partial/rejected) → {code, ko, tone}. 사람이 내린 결정."""
-    if not outcome:
-        return None
-    meta = DECISION_OUTCOMES.get(outcome)
-    if not meta:
-        return {"code": outcome, "ko": outcome, "tone": "muted"}
-    return {"code": outcome, "ko": meta["ko"], "tone": meta["tone"], "decided_by": "담당자"}
-
-
-def staff_summary() -> dict[str, Any]:
-    return STAFF_SUMMARY
-
-
-def staff_recent_cases() -> list[dict[str, Any]]:
-    out = []
-    for row in STAFF_RECENT_CASES:
-        item = dict(row)
-        item["outcome"] = _decorate_outcome(row["outcome"])
-        out.append(item)
-    return out
-
-
-def staff_case_detail(case_id: str) -> dict[str, Any] | None:
-    detail = STAFF_CASE_DETAILS.get(case_id) or next(iter(STAFF_CASE_DETAILS.values()), None)
-    if not detail:
-        return None
-    out = dict(detail)
-    # 원장 각 행에 라벨 부착
-    out["ledger"] = [
-        {**row, "critic_meta": CRITIC_BADGES.get(row.get("critic", ""), {})}
-        for row in detail["ledger"]
-    ]
-    # AI 검증 요약(PASS/ESCALATE/BLOCK 집계)
-    counts = {"PASS": 0, "ESCALATE": 0, "BLOCK": 0}
-    for row in detail["ledger"]:
-        counts[row.get("critic", "")] = counts.get(row.get("critic", ""), 0) + 1
-    out["critic_summary"] = {"reviewed": len(detail["ledger"]), **counts}
-    return out
-
-
-def staff_customer_history(customer: str | None = None) -> dict[str, Any] | None:
-    key = customer if customer in STAFF_CUSTOMER_HISTORY else DEFAULT_HISTORY_CUSTOMER
-    hist = STAFF_CUSTOMER_HISTORY.get(key)
-    if not hist:
-        return None
-    out = dict(hist)
-    out["rows"] = [{**row, "outcome": _decorate_outcome(row["outcome"])} for row in hist["rows"]]
-    return out
-
-
 def staff_profile() -> dict[str, Any]:
     return STAFF_PROFILE
-
-
-def complainant_home() -> dict[str, Any]:
-    return COMPLAINANT_HOME
-
-
-def complainant_history() -> list[dict[str, Any]]:
-    return COMPLAINANT_HISTORY
 
 
 def complainant_profile() -> dict[str, Any]:

@@ -51,18 +51,26 @@ export default function Home() {
               <th>사건번호</th>
               <th>고객명</th>
               <th>유형</th>
-              <th>판정 결과</th>
-              <th>처리일시</th>
+              <th>처리 상태</th>
+              <th>판정 원장</th>
+              <th>최근 갱신</th>
               <th>담당자</th>
             </tr>
           </thead>
           <tbody>
+            {recent.length === 0 && (
+              <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>
+                아직 처리 단계에 들어간 사건이 없습니다. <b>사건접수</b>에서 검토계획을 승인해 보세요.
+              </td></tr>
+            )}
             {recent.map((r) => (
               <tr key={r.case_id} className="clickable" onClick={() => nav('/staff/status')}>
                 <td className="mono">{r.case_id}</td>
                 <td style={{ fontWeight: 600 }}>{r.customer}</td>
                 <td>{r.type}</td>
                 <td><OutcomeBadge value={r.outcome} /></td>
+                {/* 판정 라벨 분포(예: '위반 2 · 해당없음 1') — 판정 전이면 비어 있다. */}
+                <td className="fg2">{r.verdict_digest || <span className="muted">판정 전</span>}</td>
                 <td className="fg2">{r.processed_at}</td>
                 <td className="fg2">{r.officer}</td>
               </tr>

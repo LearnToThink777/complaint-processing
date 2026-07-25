@@ -1,10 +1,11 @@
-// 서버가 없을 때 화면이 비지 않도록 하는 내장 폴백.
-// demo_store.py 의 시드와 같은 값을 축약해 담았다(라벨 포함 형태).
-const outcome = (code) => {
-  const m = { accepted: '고객 수용', partial: '일부 수용', rejected: '기각' }
-  const t = { accepted: 'good', partial: 'warn', rejected: 'bad' }
-  return code ? { code, ko: m[code], tone: t[code], decided_by: '담당자' } : null
-}
+// 서버가 없을 때 화면이 비지 않도록 하는 내장 폴백(오프라인 시연용).
+//
+// 여기 값은 '실제 데이터인 척'하지 않는다 — 화면 구조를 확인할 수 있을 만큼만 최소로 두고,
+// 사람이 읽는 자리(hint/reasoning)에는 서버 미연결 상태임을 밝힌다. 실제 숫자·이력·판정은
+// 전부 DB 에서 온다(demo_db.py). 예전엔 여기에도 6~7행짜리 가짜 이력이 쌓여 있어서
+// 서버가 살아 있는지 죽었는지 화면만 봐서는 구분할 수 없었다.
+
+const OFFLINE = '서버 미연결 · 폴백 데이터'
 
 export const FALLBACK = {
   staffSummary: {
@@ -12,81 +13,89 @@ export const FALLBACK = {
       officer: '홍길동',
       team: '준법감시팀',
       cards: [
-        { key: 'todo', label: '오늘 처리할 항목', value: 24, unit: '건', hint: '전체 32건', tone: 'info' },
-        { key: 'due_soon', label: '기한 임박 사건', value: 7, unit: '건', hint: '3일 이내 마감', tone: 'bad' },
-        { key: 'ai_wait', label: 'AI 검토 대기', value: 18, unit: '건', hint: '검토 필요', tone: 'warn' },
-        { key: 'done_today', label: '오늘 완료', value: 15, unit: '건', hint: '목표 20건', tone: 'good' },
+        { key: 'todo', label: '처리 중인 사건', value: 0, unit: '건', hint: OFFLINE, tone: 'info' },
+        { key: 'due_soon', label: '기한 임박 사건', value: 0, unit: '건', hint: OFFLINE, tone: 'bad' },
+        { key: 'ai_wait', label: '담당자 조치 대기', value: 0, unit: '건', hint: OFFLINE, tone: 'warn' },
+        { key: 'done_today', label: '오늘 종결', value: 0, unit: '건', hint: OFFLINE, tone: 'good' },
       ],
     },
-    recent: [
-      { case_id: 'C-2024-05123', customer: '김민수', type: 'ELS 불완전판매', outcome: outcome('accepted'), processed_at: '2025-05-20 16:42', officer: '홍길동' },
-      { case_id: 'C-2024-05122', customer: '이영희', type: 'DLF 손실', outcome: outcome('partial'), processed_at: '2025-05-20 15:31', officer: '홍길동' },
-      { case_id: 'C-2024-05121', customer: '박준혁', type: '예금상품 설명부족', outcome: outcome('rejected'), processed_at: '2025-05-20 14:22', officer: '최지영' },
-      { case_id: 'C-2024-05120', customer: '정다은', type: '투자권유 부적정', outcome: outcome('accepted'), processed_at: '2025-05-20 11:10', officer: '홍길동' },
-      { case_id: 'C-2024-05119', customer: '최성민', type: '신용카드 과다수수료', outcome: outcome('partial'), processed_at: '2025-05-20 10:05', officer: '최지영' },
-    ],
+    recent: [],
   },
   staffIntake: [
-    { case_id: 'C-2024-05130', customer: '김서연', type: 'ELS 불완전판매', intake_date: '2024-05-21', track: 'legal' },
-    { case_id: 'C-2024-05129', customer: '오민석', type: 'DLF 손실', intake_date: '2024-05-21', track: 'legal' },
-    { case_id: 'C-2024-05128', customer: '배지현', type: '펀드 설명부족', intake_date: '2024-05-21', track: 'legal' },
-    { case_id: 'C-2024-05127', customer: '유재현', type: '투자권유 부적정', intake_date: '2024-05-21', track: 'legal' },
-    { case_id: 'C-2024-05126', customer: '한지은', type: '예금 만기 미이행', intake_date: '2024-05-21', track: 'legal' },
-    { case_id: 'C-2024-05125', customer: '정무진', type: '신용카드 분쟁', intake_date: '2024-05-21', track: 'general' },
-    { case_id: 'C-2024-05124', customer: '김하늘', type: '보험금 지급거절', intake_date: '2024-05-21', track: 'legal' },
+    { case_id: 'C-2024-05130', customer: '김서연', type: 'ELS 불완전판매', intake_date: '2024-05-21', track: 'legal', status: 'intake' },
+    { case_id: 'C-2024-05124', customer: '김하늘', type: '보험금 지급거절', intake_date: '2024-05-21', track: 'legal', status: 'intake' },
   ],
   staffChecklistPlan: {
     case_id: 'C-2024-05130',
     classification: 'ELS 불완전판매',
     track: 'legal',
+    status: 'ready',
     items: [
-      { n: 1, item: '적합성 원칙 위반 여부', law: '금융소비자보호법 제17조', status: 'pending' },
-      { n: 2, item: '설명의무 이행 여부', law: '금융소비자보호법 제19조', status: 'pending' },
-      { n: 3, item: '불완전판매 판단', law: '금융소비자보호법 제20조', status: 'pending' },
-      { n: 4, item: '손해 인과관계', law: '민법 제750조', status: 'pending' },
-      { n: 5, item: '손해액 산정 적정성', law: '분쟁조정 기준', status: 'pending' },
-      { n: 6, item: '배상책임 범위', law: '분쟁조정위 결정례 2024-1041', status: 'pending' },
+      { item: '적합성 원칙 위반 여부', law: '금융소비자보호법 제17조', source: 'fallback', status: 'pending' },
+      { item: '설명의무 이행 여부', law: '금융소비자보호법 제19조', source: 'fallback', status: 'pending' },
     ],
-    reasoning: '안정추구형 고객 대상 고위험 ELS 판매 정황. 적합성·설명의무 중심으로 6개 항목 검토 계획 수립.',
+    reasoning: OFFLINE,
   },
+  staffCases: [
+    { case_id: 'C-2024-05130', customer: '김서연', type: 'ELS 불완전판매', track: 'legal', status: 'verdict', status_ko: '판정 완료', intake_date: '2024-05-21', has_verdict: true },
+  ],
   staffCase: {
     case_id: 'C-2024-05130',
     type: 'ELS 불완전판매',
     customer: '김서연',
-    status: 'reviewing',
-    due_date: '2024-05-23',
-    days_left: 2,
-    over_deadline_risk: true,
+    channel: 'referred',
+    status: 'verdict',
+    status_ko: '판정 완료',
+    track: 'legal',
+    facts: '안정추구형으로 분류된 개인 고객에게 원금 비보장 고위험 ELS를 판매. 원금손실 위험 고지가 불충분했다.',
+    product_type: 'els_dls',
+    product_en: 'ELS mis-selling',
+    attachments: [],
+    keywords: {},
+    intake_date: '2024-05-21',
+    due_date: null,
+    days_left: 0,
+    over_deadline_risk: false,
+    verdict_status: 'ready',
+    classification: 'ELS 불완전판매',
+    reasoning: OFFLINE,
     ledger: [
-      { item: '적합성 원칙 위반 여부', code: '금소법 §17', verdict: '위반', critic: 'PASS' },
-      { item: '설명의무 이행 여부', code: '금소법 §19', verdict: '위반', critic: 'PASS' },
-      { item: '불완전판매 판단', code: '금소법 §20', verdict: '해당', critic: 'PASS' },
-      { item: '손해 인과관계', code: '민법 §750', verdict: '인과관계 인정', critic: 'ESCALATE' },
-      { item: '손해액 산정 적정성', code: '배상 5750', verdict: '일부 인정', critic: 'PASS' },
-      { item: '배상책임 범위', code: '결정례 2024-1041', verdict: '50% 배상', critic: 'BLOCK' },
+      {
+        seq: 1, item: '적합성 원칙 위반 여부', law: '금소법 §17', source: 'fallback',
+        code: '금소법 §17', verdict: '위반', ko: '적합성원칙 위반 확인',
+        detail: '안정추구형 고객에 고위험 ELS 판매', critic: 'PASS', critic_meta: {},
+        verdict_source: 'ai', edited: false, ai_original: null,
+        override_reason: '', overridden_by: '', overridden_at: null,
+      },
+      {
+        seq: 2, item: '설명의무 이행 여부', law: '금소법 §19', source: 'fallback',
+        code: '금소법 §19', verdict: '미이행', ko: '설명의무 미이행',
+        detail: '원금손실 위험 고지 불충분', critic: 'PASS', critic_meta: {},
+        verdict_source: 'ai', edited: false, ai_original: null,
+        override_reason: '', overridden_by: '', overridden_at: null,
+      },
     ],
-    critic_summary: { reviewed: 6, PASS: 4, ESCALATE: 1, BLOCK: 1 },
-    similar_cases: [
-      { case_id: 'C-2024-01045', title: 'ELS 불완전판매 · 50% 배상', similarity: 92, closed_at: '2024-02-14', outcome_ko: '고객 수용' },
-      { case_id: 'C-2023-08912', title: 'ELS 불완전판매 · 40% 배상', similarity: 85, closed_at: '2023-11-03', outcome_ko: '조정 성립' },
-      { case_id: 'C-2023-07654', title: 'ELS 불완전판매 · 60% 배상', similarity: 78, closed_at: '2023-09-21', outcome_ko: '고객 수용' },
+    critic_summary: { reviewed: 2, PASS: 2, ESCALATE: 0, BLOCK: 0, CONFIRMED: 0 },
+    verdict_options: ['위반', '미이행', '해당', '하자', '선례', '산정', '해당없음'],
+    mediation: null,
+  },
+  staffCaseSimilar: {
+    cases: [
+      { case: '분쟁조정 2023-0942 ELS', kind: '분쟁조정 결정례', org: '', business_days: 42, award_ratio: 50, product_en: 'ELS mis-selling', similarity: 88 },
     ],
-    renegotiation: {
-      attachments: [{ name: '재협상_안_20240521.pdf', size: '1.2MB', uploaded_at: '2024-05-21 14:33' }],
-      note: '예상 완료일이 처리 기한을 초과할 위험. 재협상 자료 검토 후 담당자가 새 기한을 결정합니다.',
-    },
+    estimated_completion: '',
+    due_date: '',
+    over_deadline_risk: false,
+    product_matched: true,
+    corpus_widened: false,
+    reasoning: OFFLINE,
   },
   staffHistory: {
-    customer: '김민수',
-    customer_no: '123-45-67890',
-    repeat_pattern: { type: 'ELS 불완전판매', count: 3, message: '동일 유형(ELS 불완전판매) 민원이 총 3회 접수되었습니다.' },
+    customer: '김서연',
+    customer_no: '',
+    repeat_pattern: null,
     rows: [
-      { case_id: 'C-2024-05123', intake_date: '2024-05-20', type: 'ELS 불완전판매', outcome: outcome('accepted'), result: '배상 50%', repeat: null, consistency: 92 },
-      { case_id: 'C-2023-11456', intake_date: '2023-10-12', type: 'ELS 불완전판매', outcome: outcome('partial'), result: '배상 30%', repeat: '동일 유형 2회차', consistency: 85 },
-      { case_id: 'C-2023-07331', intake_date: '2023-06-21', type: '펀드 설명부족', outcome: outcome('rejected'), result: '-', repeat: null, consistency: 76 },
-      { case_id: 'C-2022-09110', intake_date: '2022-08-05', type: '보험금 지급거절', outcome: outcome('partial'), result: '배상 20%', repeat: null, consistency: 81 },
-      { case_id: 'C-2022-04122', intake_date: '2022-04-18', type: '신용카드 수수료', outcome: outcome('accepted'), result: '환급', repeat: null, consistency: 90 },
-      { case_id: 'C-2021-10203', intake_date: '2021-10-30', type: '대출금리 불만', outcome: outcome('rejected'), result: '-', repeat: null, consistency: 70 },
+      { case_id: 'C-2024-05130', intake_date: '2024-05-21', type: 'ELS 불완전판매', outcome: { code: 'verdict', ko: '판정 완료', tone: 'info' }, result: '위반 1 · 미이행 1', repeat: null },
     ],
   },
   staffMe: {
@@ -97,42 +106,32 @@ export const FALLBACK = {
       { key: 'transfer', label: '이관 사건 알림', enabled: true },
       { key: 'system', label: '시스템 공지 알림', enabled: false },
     ],
-    activity_log: [
-      { at: '2024-05-21 09:12', action: '로그인', detail: '성공', ip: '10.20.30.40' },
-      { at: '2024-05-21 09:11', action: '사건 검토', detail: 'C-2024-05130 열람', ip: '10.20.30.40' },
-      { at: '2024-05-20 08:55', action: '자료 다운로드', detail: '재협상_안_20240521.pdf', ip: '10.20.30.40' },
-      { at: '2024-05-20 16:42', action: '사건 처리 완료', detail: 'C-2024-05123', ip: '10.20.30.40' },
-      { at: '2024-05-20 15:31', action: '메모 작성', detail: 'C-2024-05122', ip: '10.20.30.40' },
-    ],
-    session: { current_ip: '10.20.30.40', last_login: '2024-05-21 09:12 (Chrome / Windows)' },
+    // 활동로그는 실제 처리 이력(stage_events)에서 온다 — 서버가 없으면 보여줄 것이 없다.
+    activity_log: [],
+    session: { current_ip: '', last_login: '' },
   },
   complainantHome: {
     greeting_name: '김지은',
     current_case: {
       case_id: 'C-2025-06-001', title: 'ELS 불완전판매 관련 민원', status: 'reviewing', status_ko: '검토 중',
-      intake_date: '2025-06-01', expected_completion: '2025-07-31', days_left: 15, risk: true,
+      intake_date: '2025-06-01', expected_completion: '2025-07-31', days_left: 0, risk: false,
     },
-    notices: [
-      { icon: 'megaphone', title: '담당 검토가 시작되었어요', body: '사실관계 확인을 위한 검토가 진행 중입니다.', at: '2시간 전' },
-      { icon: 'document', title: '추가 자료 제출 요청', body: '계약서 사본을 추가로 제출해주세요.', at: '1일 전' },
-    ],
+    notices: [{ icon: 'megaphone', title: '서버에 연결하지 못했어요', body: OFFLINE, at: '' }],
   },
   complainantProgress: {
     case_id: 'C-2025-06-001', title: 'ELS 불완전판매 관련 민원', intake_date: '2025-06-01',
-    expected_completion: '2025-07-31', days_left: 15, risk: true, current: 1,
+    expected_completion: '2025-07-31', days_left: 0, risk: false, current: 1,
     steps: [
-      { no: 1, key: 'intake', title: '접수', date: '2025-06-01', body: '민원이 정상적으로 접수되었어요. 담당자가 내용을 확인하고 있어요.' },
-      { no: 2, key: 'reviewing', title: '검토 중', date: '2025-06-05 ~', body: '법률 검토와 사실관계 확인을 진행하고 있어요. 조금만 기다려주세요!' },
-      { no: 3, key: 'verdict', title: '판정 완료', date: null, body: '검토가 끝나면 판정 결과를 안내드려요.' },
-      { no: 4, key: 'negotiation', title: '협의', date: null, body: '필요 시 금융회사와 협의가 진행돼요.' },
-      { no: 5, key: 'closed', title: '종결', date: null, body: '모든 절차가 완료되면 종결 안내를 드려요.' },
+      { no: 1, key: 'intake', title: '접수', date: '2025-06-01', body: '민원이 정상적으로 접수되었어요. 담당자가 내용을 확인하고 있어요.', message_count: 0, messages: [] },
+      { no: 2, key: 'reviewing', title: '검토 중', date: null, body: '법률 검토와 사실관계 확인을 진행하고 있어요. 조금만 기다려주세요!', message_count: 0, messages: [] },
+      { no: 3, key: 'verdict', title: '판정 완료', date: null, body: '검토가 끝나면 판정 결과를 안내드려요.', message_count: 0, messages: [] },
+      { no: 4, key: 'negotiation', title: '협의', date: null, body: '필요 시 금융회사와 협의가 진행돼요.', message_count: 0, messages: [] },
+      { no: 5, key: 'closed', title: '종결', date: null, body: '모든 절차가 완료되면 종결 안내를 드려요.', message_count: 0, messages: [] },
     ],
+    mediation: null,
   },
   complainantHistory: [
-    { case_id: 'C-2025-06-001', type: 'ELS 불완전판매 관련 민원', intake_date: '2025-06-01', status: 'reviewing', status_ko: '진행중', closed_at: null, expected_completion: '2025-07-31' },
-    { case_id: 'C-2025-03-015', type: '펀드 환매 지연 관련 민원', intake_date: '2025-03-15', status: 'closed', status_ko: '종결', closed_at: '2025-04-20' },
-    { case_id: 'C-2025-01-010', type: '대출 중도상환 수수료 관련 민원', intake_date: '2025-01-10', status: 'closed', status_ko: '종결', closed_at: '2025-02-05' },
-    { case_id: 'C-2024-11-020', type: '보험금 지급 거절 관련 민원', intake_date: '2024-11-20', status: 'closed', status_ko: '종결', closed_at: '2024-12-30' },
+    { case_id: 'C-2025-06-001', type: 'ELS 불완전판매 관련 민원', intake_date: '2025-06-01', status: 'reviewing', status_ko: '검토 중', closed_at: null, expected_completion: '2025-07-31' },
   ],
   complainantMe: {
     name: '김지은', email: 'jieun.kim@example.com', verified: true,
@@ -163,5 +162,10 @@ export const FALLBACK = {
     status: 'intake',
     status_ko: '접수 완료',
     received_at: '방금 전',
+  }),
+  // 서버 없을 때 게시는 무해하게 성공 처리(오프라인 데모용 스텁).
+  publishDisclosure: (body) => ({
+    case_id: 'C-2025-06-001',
+    stage_key: body?.stage_key ?? 'verdict',
   }),
 }

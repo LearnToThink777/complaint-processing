@@ -11,13 +11,17 @@ week02_structure_natural_language_requests.py와 동일한 규칙을 따릅니�
   - LangChain with_structured_output / response_format 으로 바로 연결 가능
 """
 
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field
 
 
 # 콘솔 시퀀스에 등장하는 6명의 액터 중 "말/글을 생성하는" 주체는 에이전트뿐입니다.
 Verdict = Literal["위반", "미이행", "해당", "하자", "선례", "산정", "해당없음"]
+
+# 직원 화면이 판정 라벨 선택지를 그리려면 그 목록을 알아야 한다. Literal 인자를 그대로
+# 노출해 스키마와 화면이 어긋나지 않게 한다(라벨을 추가하면 화면에도 자동 반영).
+VERDICT_LABELS: tuple[str, ...] = get_args(Verdict)
 
 
 class RegulatoryVerdict(BaseModel):

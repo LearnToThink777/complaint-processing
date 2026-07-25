@@ -256,7 +256,7 @@ class RetrievalLLM(LLMBackend):
         facts: str = "",
         today: date | None = None,
     ) -> None:
-        from .retrieval import Chunk, EmbeddingScorer, VectorStore
+        from .retrieval import Chunk, EmbeddingScorer, VectorStore  # noqa: F811 (지연 import)
 
         self._base = base or MockLLM()
         self._facts = facts
@@ -279,6 +279,10 @@ class RetrievalLLM(LLMBackend):
             except Exception:
                 scorer = None
         self._store = VectorStore(chunks, scorer=scorer)
+
+    # 검색으로 세울 법령 검토 항목의 상한. 후보군에 법령해석례(797청크)가 들어오면서
+    # 필요해졌다 — 예전엔 후보(=조문 4건) 전체를 항목으로 만들어도 문제가 없었다.
+    _MAX_STATUTE_ITEMS = 6
 
     # 코퍼스에 없는(=법조문이 아닌) 표준 처리 절차. 사건과 무관하게 항상 필요하므로
     # 검색 대상이 아니라 고정 워크플로 단계로 취급한다.
@@ -305,13 +309,21 @@ class RetrievalLLM(LLMBackend):
                     "reasoning": "사건 사실에 법률 분쟁 신호가 없어 법령 검색 없이 일반 안내 트랙으로 분류했습니다.",
                 }
                 return schema.model_validate(payload)
-            hits = self._store.search(facts, source_type="statute", k=len(self._store.chunks))
+            # 검토 항목의 근거는 '법령 조문'만 쓴다. 법령해석례·행정 결정례도 코퍼스에
+            # 있지만 그건 에이전트가 읽고 판단할 참고 자료지, 체크리스트 한 줄이 될 물건이
+            # 아니다 — 실제로 후보에 넣어 보니 ELS 불완전판매 사건에 '부실금융회사 부실관련자',
+            # '대부업 출금수수료' 같은 해석례가 설명의무·부당권유 조문을 밀어냈다.
+            # 분야별 조문 부족은 코퍼스 쪽에서 푼다(build_index.STATUTE_TARGETS 를 6개 상품군
+            # 전부 덮도록 넓혔다 — 조문 4건 → 23건).
+            cap = self._MAX_STATUTE_ITEMS
+            hits = self._store.search(facts, source_type="statute", k=cap)
             items = []
             for _, c in hits:
                 law_name = c.metadata.get("law_name", "")
                 article = c.metadata.get("article", "")
                 # 항목 문구는 '{법령} {조} 위반 여부'로 통일(가독성). 실제 근거는 source(청크 ID)가 담당.
-                items.append({"item": f"{article} 위반 여부", "law": f"{law_name} {article}", "source": c.chunk_id})
+                items.append({"item": f"{article} 위반 여부", "law": f"{law_name} {article}",
+                              "source": c.chunk_id})
             # 법조문 매칭 결과 뒤에, 사건과 무관하게 항상 필요한 절차 항목을 덧붙인다.
             items += [{**p, "source": p["law"]} for p in self._PROCEDURAL_ITEMS]
             sector = hits[0][1].metadata.get("sector", "") if hits else ""

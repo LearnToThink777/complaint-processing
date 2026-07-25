@@ -62,31 +62,32 @@ export default function MyPage() {
             </div>
           </div>
 
+          {/* 활동 로그는 실제 처리 이력(stage_events)에서 온다 — 예전엔 '자료 다운로드
+              재협상_안_20240521.pdf' 같은 있지도 않은 활동이 박혀 있었다. IP 열은 로그인·
+              세션 추적 기능이 없어 뺐다(빈 값을 채워 넣지 않는다). */}
           <div className="card">
-            <div className="panel-head"><h2>최근 활동 로그</h2></div>
-            <table className="table">
-              <thead>
-                <tr><th>일시</th><th>활동</th><th>상세</th><th>IP</th></tr>
-              </thead>
-              <tbody>
-                {data.activity_log.map((a, i) => (
-                  <tr key={i}>
-                    <td className="fg2 mono">{a.at}</td>
-                    <td style={{ fontWeight: 600 }}>{a.action}</td>
-                    <td className="fg2">{a.detail}</td>
-                    <td className="mono">{a.ip}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="card">
-            <div className="panel-head"><h2>세션 정보</h2></div>
-            <div className="panel-pad">
-              <div className="kv"><span className="k">현재 접속 IP</span><span className="v mono">{data.session.current_ip}</span></div>
-              <div className="kv"><span className="k">최근 접속</span><span className="v">{data.session.last_login}</span></div>
+            <div className="panel-head">
+              <h2>최근 처리 활동</h2>
+              <span className="muted" style={{ fontSize: 12 }}>{data.activity_log.length}건</span>
             </div>
+            {data.activity_log.length === 0 ? (
+              <div className="panel-pad"><p className="muted" style={{ fontSize: 13 }}>아직 기록된 처리 활동이 없습니다.</p></div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr><th>일시</th><th>활동</th><th>사건번호</th></tr>
+                </thead>
+                <tbody>
+                  {data.activity_log.map((a, i) => (
+                    <tr key={i}>
+                      <td className="fg2 mono">{a.at}</td>
+                      <td style={{ fontWeight: 600 }}>{a.action}</td>
+                      <td className="fg2 mono">{a.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

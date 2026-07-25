@@ -474,6 +474,107 @@
   color: var(--muted);
 }
 
+/* ---- 폴딩 단계 헤더(클릭해서 상세 메시지 펼침) ---- */
+.cx-step-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cx-step-toggle:disabled {
+  cursor: default;
+}
+.cx-step.has-msg .cx-step-toggle:hover:not(:disabled) .cx-step-title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cx-step-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+  flex: none;
+}
+.cx-chevron {
+  margin-left: auto;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.cx-step.open .cx-chevron {
+  transform: rotate(180deg);
+}
+/* 날짜가 있으면 날짜가 우측으로 밀리고 쉐브론은 그 뒤에 붙는다 */
+.cx-step-toggle .cx-step-date + .cx-chevron {
+  margin-left: 8px;
+}
+
+/* ---- 단계별 메시지 리스트(폴딩 카드 내부) ---- */
+.cx-msg-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cx-msg {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #fff;
+}
+.cx-msg.by-staff {
+  border-left-color: var(--accent);
+}
+.cx-msg.by-citizen {
+  border-left-color: var(--good);
+  background: var(--good-bg);
+}
+.cx-msg.by-ai {
+  border-left-color: #8957e5;
+  background: rgba(137, 87, 229, 0.06);
+}
+.cx-msg.by-system {
+  border-left-color: var(--muted);
+}
+.cx-msg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cx-msg-sender {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-2);
+}
+.cx-msg-at {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cx-msg-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.cx-msg-body {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fg-2);
+  margin-top: 3px;
+}
+
 /* ---- 이력 탭 ---- */
 .cx-filter {
   display: flex;
@@ -602,4 +703,183 @@
 }
 .cx-menu-row .m-ico {
   font-size: 17px;
+}
+
+/* ---- 협상·중재 (민원인) --------------------------------------------------
+   직원 처리현황의 중재 패널과 '같은 사본'을 보여주는 자리. 이중공개(청중별로 다르게
+   쓰는 글)와 달리 중재 기록은 양측에게 동일하다는 것이 이 화면의 전제다. */
+.cx-med {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cx-med-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.cx-med-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 18px;
+  flex: none;
+}
+.cx-med-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.cx-btn {
+  padding: 11px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cx-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.cx-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cx-med-reason,
+.cx-med-note,
+.cx-med-empty {
+  font-size: 12.5px;
+  line-height: 1.65;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--chip, #f5f7fa);
+  color: var(--fg2, #55606f);
+}
+.cx-med-note {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.cx-med-subhead {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 2px 0 6px;
+}
+.cx-med-issue {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 12px;
+  margin: 0 0 8px;
+}
+.cx-med-issue-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.cx-med-issue-title {
+  font-size: 13px;
+  font-weight: 700;
+  flex: 1;
+}
+.cx-med-issue-code {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+/* 쟁점마다 유리·불리를 나란히 — 중재자가 한쪽 편이 아님을 화면 구조로 보인다. */
+.cx-med-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cx-med-pair > div {
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.cx-med-pair .pro {
+  background: var(--good-bg);
+}
+.cx-med-pair .con {
+  background: var(--bad-bg);
+}
+.cx-med-pair b {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.cx-med-pair .pro b {
+  color: var(--good);
+}
+.cx-med-pair .con b {
+  color: var(--bad);
+}
+.cx-med-decider {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.cx-med-toggle {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+}
+.cx-med-log {
+  display: grid;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.cx-med-log-row {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.cx-med-log-icon {
+  font-size: 14px;
+  flex: none;
+}
+.cx-med-log-who {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.cx-med-log-text {
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.cx-med-more summary {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.cx-med-more .cx-med-input {
+  margin: 8px 0;
+}
+
+@media (max-width: 520px) {
+  .cx-med-pair {
+    grid-template-columns: 1fr;
+  }
 }

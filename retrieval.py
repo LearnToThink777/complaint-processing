@@ -17,7 +17,7 @@ import math
 import re
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -40,6 +40,62 @@ class Chunk(BaseModel):
         parts += self.labels.get("keywords", []) or []
         parts += self.labels.get("everyday_questions", []) or []
         return " ".join(p for p in parts if p)
+
+
+# ---- 코퍼스 스코프: 무엇을 근거로 삼을지 -------------------------------------
+# 코퍼스는 종류(source_type)와 발급기관(metadata["org"])이 섞여 있다. '무엇을 뒤질지'를
+# 검색 호출부마다 따로 정하면 경로별로 답이 갈리므로(실제로 갈렸다) 여기 한 곳에 둔다.
+
+# 법령 근거로 인용할 수 있는 종류. statute 는 코퍼스에 4청크뿐이라 조문만 뒤지면
+# 예금·보험·대출처럼 조문 시드가 없는 분야에서 근거가 0건이 된다 — 같은 성격의
+# 법제처 법령해석례를 함께 후보에 놓는다.
+STATUTE_SOURCES = ("statute", "law_interp")
+
+# 선례로 인용할 수 있는 종류. 분쟁조정 결정례(12청크)에 금융위 검사·제재 결정례를 더한다.
+PRECEDENT_SOURCES = ("decision", "admin_decision")
+
+# 금융 규제·해석 권한이 있는 발급기관만 근거로 삼는다.
+#
+# corpus_index.json(6,524청크)의 구성과 이 필터가 남기는 것:
+#
+#   [검색에 쓰는 것 · 2,339]
+#      2,100  admin_decision  금융위원회 검사·제재 결정례        (org=fsc)
+#        147  law_interp      법제처 법령해석례                 (org=expc)
+#         57  admin_decision  공정거래위원회                    (org=ftc)
+#         23  statute         금융 6법 조문(build_index.STATUTE_TARGETS)
+#         12  decision        금융분쟁조정위 결정례
+#
+#   [의도적으로 제외 · 4,185]
+#      2,141  국민권익위원회 일반 행정심판      (org=acr)
+#      1,053  조세심판원 조세 재결              (org=ttSpecialDecc)
+#        600  관세청 법령해석례                 (org=kcsCgmExpc)
+#        341  국민권익위원회(특별행정심판)      (org=acrSpecialDecc)
+#         50  행정안전부 법령해석례             (org=moisCgmExpc)
+#
+# 제외분이 코퍼스에 들어 있는 이유는 선별이 아니라 수집 방식 때문이다 — collect_corpus.py
+# 가 law.go.kr 의 8개 target 을 통째로 받아왔다(lawgokr_targets.TARGET_SPECS 참고).
+#
+# 버리지 않고 필터로 가리기만 하는 이유: 지금 금융 민원에 쓸모가 없을 뿐 코퍼스 자체는
+# 멀쩡하고(조세·행정 도메인으로 넓힐 여지), 색인 재수집 비용이 크다. 대신 검색에서는
+# 반드시 걸러야 한다 — 이들은 임베딩상 '거절·환수 분쟁'으로 가까워 보여서, 필터가 없으면
+# 보험금 지급거절 질의에 '부당이득금환수고지처분취소청구'(권익위)가 1순위로 잡힌다(실측).
+# 확인해 보면 제외분에 금융상품 민원은 실제로 없다: 권익위 660문서 중 '금융' 키워드가
+# 걸리는 29건도 건강보험료·고용산재보험료·내일배움카드 같은 사회보험이고, 조세심판원
+# 300문서는 전부 취득세·익금산입 분쟁에서 금융기관을 언급할 뿐이다.
+#
+# 근거 수를 늘리는 것보다 잘못된 권위를 인용하지 않는 것이 먼저다.
+FINANCE_ORGS = {"fsc", "ftc", "expc"}
+
+
+def finance_scoped(chunk: "Chunk") -> bool:
+    """금융 관련 발급기관 문서만 통과. org 메타가 없는 코퍼스(법령 조문·분쟁조정 결정례)는 통과."""
+    org = chunk.metadata.get("org")
+    return org is None or org in FINANCE_ORGS
+
+
+def doc_key(chunk: "Chunk") -> str:
+    """청크가 속한 '문서' 식별자. 같은 결정문의 여러 섹션을 한 건으로 묶는 데 쓴다."""
+    return chunk.chunk_id.split("#")[0]
 
 
 # ---- 청킹: 구조 규칙만, LLM 없음 ----------------------------------------------
@@ -160,6 +216,16 @@ class ScorerStrategy(ABC):
     @abstractmethod
     def score(self, query: str, chunk: Chunk) -> float:
         ...
+
+    def score_many(self, query: str, chunks: list[Chunk]) -> list[float]:
+        """청크 여러 개를 한 번에 채점한다. 기본 구현은 score() 를 그대로 반복한다.
+
+        후보군이 수천 건인 코퍼스(행정 결정례·법령해석례)를 검색하면서 생긴 훅이다.
+        벡터 연산으로 한 번에 계산할 수 있는 전략(EmbeddingScorer)은 이 메서드를
+        재정의해 파이썬 루프를 벗어난다 — VectorStore 는 무엇이 오는지 모른 채
+        score_many 만 부른다(Strategy 경계 유지).
+        """
+        return [self.score(query, c) for c in chunks]
 
 
 class LexicalScorer(ScorerStrategy):
@@ -295,6 +361,9 @@ class EmbeddingScorer(ScorerStrategy):
         self._embed_fn = embed_fn
         self._qcache: dict[str, list[float]] = {}
         self._dcache: dict[str, list[float]] = {}
+        # score_many 의 numpy 경로용 행렬 캐시: 같은 후보군을 반복 검색할 때 재사용한다.
+        # key = 후보군 chunk_id 튜플의 해시(같은 source_type/필터면 항상 같은 후보군).
+        self._matrix_cache: dict[int, Any] = {}
 
     @property
     def embed_fn(self) -> EmbedFn:
@@ -303,9 +372,12 @@ class EmbeddingScorer(ScorerStrategy):
             self._embed_fn = default_gemini_embed_fn()
         return self._embed_fn
 
-    def score(self, query: str, chunk: Chunk) -> float:
+    def _query_vec(self, query: str) -> list[float]:
         if query not in self._qcache:
             self._qcache[query] = self.embed_fn([query], True)[0]
+        return self._qcache[query]
+
+    def _doc_vec(self, chunk: Chunk) -> list[float]:
         if chunk.chunk_id not in self._dcache:
             # 색인 시 사전계산된 벡터가 있으면 그대로 사용 — 문서 임베딩 API 호출 0회,
             # 검색 1회당 질의 임베딩 1회만 남는다.
@@ -313,7 +385,37 @@ class EmbeddingScorer(ScorerStrategy):
                 self._dcache[chunk.chunk_id] = chunk.embedding
             else:
                 self._dcache[chunk.chunk_id] = self.embed_fn([chunk.search_text], False)[0]
-        return cosine(self._qcache[query], self._dcache[chunk.chunk_id])
+        return self._dcache[chunk.chunk_id]
+
+    def score(self, query: str, chunk: Chunk) -> float:
+        return cosine(self._query_vec(query), self._doc_vec(chunk))
+
+    def score_many(self, query: str, chunks: list[Chunk]) -> list[float]:
+        """후보군 전체를 행렬 한 번으로 채점한다(numpy 있으면). 없으면 기본 루프.
+
+        코퍼스가 6천 청크 규모라 파이썬 루프 코사인은 검색 1회당 1초 안팎을 먹는다.
+        검색은 검토계획 1건에 여러 번 일어나므로 여기서 벡터화해 둔다 — 결과값은
+        score() 와 동일한 코사인이다(임베딩은 L2 정규화돼 있어 내적 = 코사인).
+        """
+        if not chunks:
+            return []
+        try:
+            import numpy as np
+        except ModuleNotFoundError:
+            return super().score_many(query, chunks)
+
+        key = hash(tuple(c.chunk_id for c in chunks))
+        mat = self._matrix_cache.get(key)
+        if mat is None:
+            mat = np.asarray([self._doc_vec(c) for c in chunks], dtype="float32")
+            # 정규화 상태를 보장해야 내적을 코사인으로 쓸 수 있다(색인 임베딩은 정규화돼 있지만
+            # 외부에서 주입된 벡터가 섞일 수 있으므로 한 번 맞춰 둔다).
+            norms = np.linalg.norm(mat, axis=1, keepdims=True)
+            mat = mat / np.where(norms == 0, 1.0, norms)
+            self._matrix_cache[key] = mat
+        q = np.asarray(self._query_vec(query), dtype="float32")
+        qn = float(np.linalg.norm(q)) or 1.0
+        return (mat @ (q / qn)).tolist()
 
 
 # ---- 벡터 스토어: 메타 필터 + 유사도(전략 주입) -------------------------------
@@ -335,7 +437,9 @@ class VectorStore:
         query: str,
         *,
         source_type: str | None = None,
+        source_types: Sequence[str] | None = None,
         filters: dict[str, Any] | None = None,
+        where: Callable[[Chunk], bool] | None = None,
         k: int = 5,
     ) -> list[tuple[float, Chunk]]:
         """filters(메타 완전일치)로 먼저 좁히고, 유사도 상위 k개를 반환.
@@ -344,13 +448,29 @@ class VectorStore:
         사건 사실과 격식체 법령 원문 사이의 어휘 겹침이 낮아도 필터(메타)로 이미
         좁혀진 후보군 안에서는 '가장 그나마 가까운' 항목을 보여주는 게 맞다.
         (실제 임베딩으로 교체하면 저점 매칭 자체가 줄어들 것.)
+
+        source_type 은 단일 종류, source_types 는 여러 종류를 한 후보군으로 묶는다.
+        후자는 '법령 조문(statute)이 4건뿐이라 특정 분야에선 근거가 0건'인 문제를
+        푼다 — 같은 성격의 코퍼스(법령해석례·행정 결정례)를 함께 후보로 놓는다.
+        둘 다 주면 합집합. 둘 다 없으면 전체 코퍼스가 후보다.
+
+        where 는 메타 완전일치로 표현되지 않는 후보군 제약(예: '금융 규제기관이 발급한
+        문서만')을 걸기 위한 술어다. filters 와 함께 쓰면 둘 다 만족하는 청크만 남는다.
         """
-        pool = self.chunks
+        wanted: set[str] = set()
         if source_type:
-            pool = [c for c in pool if c.source_type == source_type]
+            wanted.add(source_type)
+        if source_types:
+            wanted.update(source_types)
+        pool = self.chunks
+        if wanted:
+            pool = [c for c in pool if c.source_type in wanted]
         if filters:
             pool = [c for c in pool if all(c.metadata.get(kk) == vv for kk, vv in filters.items())]
-        scored = [(self.scorer.score(query, c), c) for c in pool]
+        if where is not None:
+            pool = [c for c in pool if where(c)]
+        scores = self.scorer.score_many(query, pool)
+        scored = list(zip(scores, pool))
         scored.sort(key=lambda sc: sc[0], reverse=True)
         return scored[:k]
 
@@ -380,14 +500,29 @@ def assemble_similar_cases(
 
     같은 사건번호의 여러 섹션이 잡히므로 사건 단위로 합치고, 소요영업일 평균으로
     예상 완료일을 추정한 뒤 처리 기한과 비교해 초과 위험을 판정한다.
+
+    상품유형이 맞는 분쟁조정 결정례를 먼저 찾고, 없으면 금융위 검사·제재 결정례까지
+    넓혀 다시 찾는다 — product_en 메타는 분쟁조정 결정례 12청크에만 붙어 있어, 필터만
+    걸면 보험·대출·예금 사건은 언제나 0건이 되기 때문이다(case_ai 와 같은 규칙).
     """
     hits = store.search(query, source_type="decision", filters={"product_en": product_en}, k=k * 4)
+    widened = False
+    if not hits:
+        hits = store.search(query, source_types=PRECEDENT_SOURCES, where=finance_scoped, k=k * 8)
+        widened = bool(hits)
 
     seen: dict[str, dict[str, Any]] = {}
     for _, c in hits:
-        no = c.metadata["case_no"]
+        m = c.metadata
+        # 분쟁조정 결정례는 case_no, 행정 결정례는 doc_id 로 사건을 식별한다.
+        no = m.get("case_no") or m.get("doc_id") or doc_key(c)
         if no not in seen:
-            seen[no] = {"case": c.metadata["case_display"], "business_days": c.metadata["business_days"]}
+            seen[no] = {
+                "case": m.get("case_display") or m.get("title") or str(no),
+                # 소요 영업일은 분쟁조정 결정례에만 기록돼 있다. 없으면 0 으로 채워 두되
+                # 아래 평균 계산에서는 제외한다(0영업일 = 오늘 완료로 우기지 않기 위해).
+                "business_days": m.get("business_days") or 0,
+            }
         if len(seen) == k:
             break
 
@@ -401,18 +536,30 @@ def assemble_similar_cases(
             "reasoning": f"'{product_en}' 유형의 유사 결정문을 찾지 못해 위험 판정을 보류합니다.",
         }
 
-    avg = round(sum(c["business_days"] for c in cases) / len(cases))
+    lead = (f"'{product_en}' 유형의 분쟁조정 결정례가 없어 금융위 검사·제재 결정례까지 넓혀 검색한 "
+            f"{len(cases)}건" if widened else f"유사 {len(cases)}건")
+    timed = [c["business_days"] for c in cases if c["business_days"] > 0]
+    if not timed:
+        return {
+            "cases": cases,
+            "estimated_completion": due_date,
+            "due_date": due_date,
+            "over_deadline_risk": False,
+            "reasoning": f"{lead}을 찾았으나 처리 소요일 기록이 없어 완료일 추정은 보류합니다.",
+        }
+
+    avg = round(sum(timed) / len(timed))
     est = add_business_days(today, avg)
     est_iso = est.isoformat()
-    risk = est_iso > due_date
+    risk = bool(due_date) and est_iso > due_date
     return {
         "cases": cases,
         "estimated_completion": est_iso,
         "due_date": due_date,
         "over_deadline_risk": risk,
         "reasoning": (
-            f"유사 {len(cases)}건 평균 약 {avg}영업일 소요. 오늘({today.isoformat()}) 기준 "
-            f"예상 완료 {est_iso} vs 처리 기한 {due_date} → "
+            f"{lead} 중 소요일이 기록된 {len(timed)}건 평균 약 {avg}영업일. "
+            f"오늘({today.isoformat()}) 기준 예상 완료 {est_iso} vs 처리 기한 {due_date} → "
             f"{'초과 위험' if risk else '기한 내 가능'}."
         ),
     }
