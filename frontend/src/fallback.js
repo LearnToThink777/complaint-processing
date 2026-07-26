@@ -5,7 +5,8 @@
 // 전부 DB 에서 온다(demo_db.py). 예전엔 여기에도 6~7행짜리 가짜 이력이 쌓여 있어서
 // 서버가 살아 있는지 죽었는지 화면만 봐서는 구분할 수 없었다.
 
-const OFFLINE = '서버 미연결 · 폴백 데이터'
+// 화면에 그대로 찍히는 문구다 — '폴백'처럼 내부에서만 쓰는 말 대신 사용자가 읽을 말로.
+const OFFLINE = '서버에 연결하지 못해 최신 정보를 불러오지 못했습니다.'
 
 export const FALLBACK = {
   staffSummary: {
@@ -36,9 +37,25 @@ export const FALLBACK = {
     ],
     reasoning: OFFLINE,
   },
-  staffCases: [
-    { case_id: 'C-2024-05130', customer: '김서연', type: 'ELS 불완전판매', track: 'legal', status: 'verdict', status_ko: '판정 완료', intake_date: '2024-05-21', has_verdict: true },
-  ],
+  // 처리현황 목록 — 서버가 검색·정렬을 책임지므로 응답은 {rows, facets, …} 형태다.
+  staffCases: {
+    rows: [
+      {
+        case_id: 'C-2024-05130', customer: '김서연', type: 'ELS 불완전판매', track: 'legal',
+        channel: 'referred', status: 'verdict', status_ko: '판정 완료', status_tone: 'info',
+        intake_date: '2024-05-21', due_date: null, days_left: null, over_deadline_risk: false,
+        verdict_status: 'ready', verdict_digest: '위반 1 · 미이행 1', item_count: 2,
+        has_verdict: true, next_action: '판정 확정 · 안내문 게시',
+        mediation_status: 'none', mediation_status_ko: null,
+        last_activity_at: null, updated_at: null,
+      },
+    ],
+    total: 1,
+    facets: { all: 1, reviewing: 0, verdict_generating: 0, verdict: 1, negotiating: 0, closed: 0, open: 1, attention: 1, due_soon: 0 },
+    sort: 'updated_at',
+    order: 'desc',
+    filters: { q: '', status: 'all', due_soon: false },
+  },
   staffCase: {
     case_id: 'C-2024-05130',
     type: 'ELS 불완전판매',
@@ -78,7 +95,14 @@ export const FALLBACK = {
     critic_summary: { reviewed: 2, PASS: 2, ESCALATE: 0, BLOCK: 0, CONFIRMED: 0 },
     verdict_options: ['위반', '미이행', '해당', '하자', '선례', '산정', '해당없음'],
     mediation: null,
+    // 처리 기록·게시 이력은 DB 에서만 온다 — 서버가 없으면 보여줄 것이 없다.
+    events: [],
+    staff_messages: [],
+    customer_case_count: 1,
+    next_action: '판정 확정 · 안내문 게시',
   },
+  // 중재 콘솔 목록 — 서버가 없으면 고를 사건도 없다(빈 목록 → 화면이 안내를 그린다).
+  staffMediations: [],
   staffCaseSimilar: {
     cases: [
       { case: '분쟁조정 2023-0942 ELS', kind: '분쟁조정 결정례', org: '', business_days: 42, award_ratio: 50, product_en: 'ELS mis-selling', similarity: 88 },
@@ -94,8 +118,16 @@ export const FALLBACK = {
     customer: '김서연',
     customer_no: '',
     repeat_pattern: null,
+    summary: { total: 1, open: 1, closed: 0, first_intake: '2024-05-21', last_intake: '2024-05-21', types: 1 },
+    candidates: [],
     rows: [
-      { case_id: 'C-2024-05130', intake_date: '2024-05-21', type: 'ELS 불완전판매', outcome: { code: 'verdict', ko: '판정 완료', tone: 'info' }, result: '위반 1 · 미이행 1', repeat: null },
+      {
+        case_id: 'C-2024-05130', intake_date: '2024-05-21', type: 'ELS 불완전판매',
+        channel: 'referred', status: 'verdict',
+        outcome: { code: 'verdict', ko: '판정 완료', tone: 'info' }, result: '위반 1 · 미이행 1',
+        event_count: 0, last_activity_at: null, mediation_status_ko: null,
+        in_progress: true, repeat: null,
+      },
     ],
   },
   staffMe: {
@@ -122,16 +154,22 @@ export const FALLBACK = {
     case_id: 'C-2025-06-001', title: 'ELS 불완전판매 관련 민원', intake_date: '2025-06-01',
     expected_completion: '2025-07-31', days_left: 0, risk: false, current: 1,
     steps: [
-      { no: 1, key: 'intake', title: '접수', date: '2025-06-01', body: '민원이 정상적으로 접수되었어요. 담당자가 내용을 확인하고 있어요.', message_count: 0, messages: [] },
-      { no: 2, key: 'reviewing', title: '검토 중', date: null, body: '법률 검토와 사실관계 확인을 진행하고 있어요. 조금만 기다려주세요!', message_count: 0, messages: [] },
-      { no: 3, key: 'verdict', title: '판정 완료', date: null, body: '검토가 끝나면 판정 결과를 안내드려요.', message_count: 0, messages: [] },
-      { no: 4, key: 'negotiation', title: '협의', date: null, body: '필요 시 금융회사와 협의가 진행돼요.', message_count: 0, messages: [] },
-      { no: 5, key: 'closed', title: '종결', date: null, body: '모든 절차가 완료되면 종결 안내를 드려요.', message_count: 0, messages: [] },
+      { no: 1, key: 'intake', title: '접수', date: '2025-06-01', body: '민원이 정상적으로 접수되었어요. 담당자가 내용을 확인하고 있어요.', entry_count: 0, entries: [] },
+      { no: 2, key: 'reviewing', title: '검토 중', date: null, body: '법률 검토와 사실관계 확인을 진행하고 있어요. 조금만 기다려주세요!', entry_count: 0, entries: [] },
+      { no: 3, key: 'verdict', title: '판정 완료', date: null, body: '검토가 끝나면 판정 결과를 안내드려요.', entry_count: 0, entries: [] },
+      { no: 4, key: 'negotiation', title: '협의', date: null, body: '필요 시 금융회사와 협의가 진행돼요.', entry_count: 0, entries: [] },
+      { no: 5, key: 'closed', title: '종결', date: null, body: '모든 절차가 완료되면 종결 안내를 드려요.', entry_count: 0, entries: [] },
     ],
     mediation: null,
+    cases: [],
   },
   complainantHistory: [
-    { case_id: 'C-2025-06-001', type: 'ELS 불완전판매 관련 민원', intake_date: '2025-06-01', status: 'reviewing', status_ko: '검토 중', closed_at: null, expected_completion: '2025-07-31' },
+    {
+      case_id: 'C-2025-06-001', type: 'ELS 불완전판매 관련 민원', intake_date: '2025-06-01',
+      status: 'reviewing', status_ko: '검토 중', closed_at: null, expected_completion: '2025-07-31',
+      days_left: 0, step: 1, step_total: 5, step_title: '검토 중',
+      entry_count: 0, last_activity_at: null, mediation_status_ko: null,
+    },
   ],
   complainantMe: {
     name: '김지은', email: 'jieun.kim@example.com', verified: true,

@@ -30,10 +30,12 @@ DECISION_OUTCOMES = {
 }
 
 # AI 신뢰도 검증(Critic) 3단계. critic.py 의 verdict 와 동일 개념.
+# ko 는 화면에 그대로 찍히는 라벨이다 — 담당자는 개발자가 아니므로 PASS/ESCALATE/BLOCK
+# 같은 내부 코드명 대신 한국어로 읽히는 말을 쓴다(코드값 자체는 그대로 PASS/…).
 CRITIC_BADGES = {
-    "PASS": {"ko": "PASS", "tone": "good", "desc": "근거 일치 · 자동 통과"},
-    "ESCALATE": {"ko": "ESCALATE", "tone": "warn", "desc": "불확실 · 사람 확인 필요"},
-    "BLOCK": {"ko": "BLOCK", "tone": "bad", "desc": "근거 밖 인용 · 차단"},
+    "PASS": {"ko": "근거 확인", "tone": "good", "desc": "인용 근거가 판정과 일치"},
+    "ESCALATE": {"ko": "확인 필요", "tone": "warn", "desc": "근거가 불확실 — 담당자 확인 권장"},
+    "BLOCK": {"ko": "근거 부족", "tone": "bad", "desc": "검색 근거 밖의 내용 — 그대로 쓰면 안 됨"},
     # 담당자가 AI 판정을 직접 고쳐 확정한 행. AI 신뢰도 검증의 대상이 아니다(검증할 AI 산출물이
     # 아니라 사람의 결정이므로) — 배지 자리에 '누가 정했는지'를 대신 표시한다.
     "CONFIRMED": {"ko": "담당자 확정", "tone": "info", "desc": "담당자가 직접 판정 · AI 검증 대상 아님"},
@@ -45,7 +47,7 @@ CASE_STATUS = {
     "intake": {"ko": "접수 대기", "tone": "muted"},
     "referred": {"ko": "이관됨", "tone": "info"},
     "plan_generating": {"ko": "AI 검토계획 생성 중", "tone": "info"},
-    "plan_ready": {"ko": "검토계획 대기", "tone": "warn"},
+    "plan_ready": {"ko": "검토계획 승인 대기", "tone": "warn"},
     "reviewing": {"ko": "검토 중", "tone": "info"},
     "verdict_generating": {"ko": "AI 판정 생성 중", "tone": "info"},
     "verdict": {"ko": "판정 완료", "tone": "info"},

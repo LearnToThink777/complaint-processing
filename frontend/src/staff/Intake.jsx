@@ -4,15 +4,15 @@ import { useAsync, Loading, Badge } from '../components.jsx'
 
 // 검토계획 상태 → 화면 배지.
 const PLAN_BADGE = {
-  pending: { ko: '생성 전', tone: 'muted' },
-  generating: { ko: 'AI 생성 중', tone: 'info' },
-  ready: { ko: '검토계획 대기', tone: 'warn' },
-  approved: { ko: '승인됨', tone: 'good' },
-  failed: { ko: '생성 실패', tone: 'bad' },
+  pending: { ko: '수립 전', tone: 'muted' },
+  generating: { ko: 'AI 수립 중', tone: 'info' },
+  ready: { ko: '승인 대기', tone: 'warn' },
+  approved: { ko: '승인 완료', tone: 'good' },
+  failed: { ko: '수립 실패', tone: 'bad' },
 }
 
 export default function Intake() {
-  const { loading, data: cases, reload } = useAsync(() => api.staffIntake(), [])
+  const { data: cases, reload } = useAsync(() => api.staffIntake(), [])
   const [selected, setSelected] = useState(null)
   const [plan, setPlan] = useState(null)
   const [planLoading, setPlanLoading] = useState(false)
@@ -95,7 +95,7 @@ export default function Intake() {
     }
   }
 
-  if (loading || !cases) return <Loading />
+  if (!cases) return <Loading />
 
   const status = plan?.status
   const items = plan?.items ?? []
@@ -106,7 +106,7 @@ export default function Intake() {
     <div>
       <div className="page-head">
         <h1>사건접수</h1>
-        <p>신규 이관·제출된 사건 목록입니다. 사건을 선택하면 AI 자동 검토계획을 확인·승인할 수 있어요.</p>
+        <p>새로 접수·이관된 사건입니다. 사건을 선택하면 AI가 세운 검토계획을 확인하고 승인할 수 있습니다.</p>
       </div>
 
       <div className="split">
@@ -143,7 +143,7 @@ export default function Intake() {
 
         <div className="card">
           <div className="panel-head">
-            <h2>🤖 AI 자동 검토계획</h2>
+            <h2>AI 검토계획</h2>
             <Badge tone={badge.tone}>{badge.ko}</Badge>
           </div>
           <div className="panel-pad">
@@ -153,15 +153,15 @@ export default function Intake() {
               <Loading label="검토계획 불러오는 중…" />
             ) : status === 'generating' ? (
               <div className="live-progress">
-                <span className="spinner" /> 실제 LLM이 사건 사실을 읽고 법령·결정례를 검색해 검토 항목을 도출하는 중… (수십 초 소요)
+                <span className="spinner" /> AI가 사건 내용을 읽고 관련 법령·결정례를 찾아 검토 항목을 정리하고 있습니다. 잠시만 기다려 주세요.
               </div>
             ) : status === 'pending' ? (
               <>
                 <p className="muted" style={{ fontSize: 12.5, marginBottom: 14 }}>
-                  아직 검토계획이 없습니다. 실제 AI로 이 사건의 검토 항목을 생성하세요.
+                  아직 검토계획이 없습니다. 이 사건에서 확인해야 할 검토 항목을 AI가 정리하도록 요청하세요.
                 </p>
                 <button className="btn primary block" onClick={runGenerate} disabled={busy}>
-                  {busy ? '요청 중…' : '⚡ AI 검토계획 생성'}
+                  {busy ? '요청 중…' : 'AI 검토계획 세우기'}
                 </button>
               </>
             ) : (
@@ -169,10 +169,6 @@ export default function Intake() {
                 {plan?.reasoning && (
                   <p className="muted" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 14 }}>
                     분류: {plan.classification} · {plan.reasoning}
-                    {plan.duration_ms != null && (
-                      <span> · 생성 {(plan.duration_ms / 1000).toFixed(1)}초
-                        {plan.provider === 'fallback' ? ' (폴백)' : ''}</span>
-                    )}
                   </p>
                 )}
                 {items.map((it, i) => (
@@ -186,7 +182,7 @@ export default function Intake() {
                 ))}
                 {items.length === 0 && (
                   <p className="muted" style={{ fontSize: 12.5 }}>
-                    법률 검토 항목이 없습니다(일반 안내 트랙일 수 있어요).
+                    법률 검토가 필요한 항목이 없습니다. 일반 안내로 처리할 수 있는 사건입니다.
                   </p>
                 )}
                 <button
@@ -195,7 +191,7 @@ export default function Intake() {
                   onClick={runApprove}
                   disabled={approved || busy}
                 >
-                  {approved ? '✓ 검토계획 승인됨 (검토 중)' : busy ? '처리 중…' : '검토계획 승인'}
+                  {approved ? '✓ 승인 완료 — 처리현황에서 이어서 진행' : busy ? '처리 중…' : '검토계획 승인'}
                 </button>
               </>
             )}

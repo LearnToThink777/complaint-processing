@@ -185,7 +185,8 @@ function render(){
   const xl=$('xlink');
   if(MEDIATED.has(f.case_id)){
     xl.hidden=false;
-    xl.href='mediation.html?case='+encodeURIComponent(f.case_id);
+    // 중재 콘솔은 직원 포털 안 화면이다(정적 mediation.html 은 없어졌다).
+    xl.href='/ui/#/staff/mediation?case='+encodeURIComponent(f.case_id);
     xl.innerHTML='중재 콘솔 <span class="arw">— 이 사건의 상담·협상 기록 →</span>';
   }else{ xl.hidden=true; }
   const cls=$('classification');
@@ -249,7 +250,7 @@ function render(){
       active:  {sub:'지금 협상이 진행 중 — 어떤 쟁점이 오가는지 열어보기', badge:'진행 중'},
       resolved:{sub:'협상이 합의됐어요 — 무엇을 근거로 중재됐는지 보기', badge:'합의됨'},
     }[f.nego_state] || {sub:'상담·중재 과정 보기', badge:''};
-    cta.innerHTML=`<a class="med-cta ${f.nego_state}" href="mediation.html?case=${encodeURIComponent(f.case_id)}">
+    cta.innerHTML=`<a class="med-cta ${f.nego_state}" href="/ui/#/staff/mediation?case=${encodeURIComponent(f.case_id)}">
       <span class="med-top">🤝 중재 콘솔 열기${copy.badge?`<span class="med-badge">${copy.badge}</span>`:''}</span>
       <span class="med-sub">${copy.sub}</span></a>`;
   }else{ cta.innerHTML=''; }

@@ -80,13 +80,12 @@ complaint_processing/
   facade.py          # run_complaint_case() — run.py/api.py가 공유하는 진입점
   run.py             # CLI 실행기 (콘솔 호환 frames JSON 생성)
   api.py             # FastAPI 앱 — Swagger(/docs) + 정적 프론트 서빙
-  demo_api.py        # 관리자 시연용 SPA 전용 API(/api/staff/*, /api/complainant/*)
+  demo_api.py        # 서비스 화면(SPA) 전용 API(/api/staff/*, /api/complainant/*)
   demo_store.py      # 위 데모 API가 쓰는 캔드(canned) 인메모리 데이터
   mediation_live.py  # 라이브 중재 세션 스토어(턴 단위 진행, LLM 폴백 포함)
   retrieval.py       # 검색 코어: 청킹 · 메타 파싱 · VectorStore · 유사사례 조립 (LLM 아님)
   build_index.py     # (a) 오프라인 색인 스크립트 → corpus_index.json
-  viewer.html         # 정적 콘솔 — /api/frames 소비, 실패 시 frames.json 폴백
-  mediation.html      # 정적 중재 콘솔 — 정적 재생 + 라이브 세션(GPT-5 nano/mini 선택) 둘 다 지원
+  viewer.html         # 파이프라인 프레임 뷰어(개발용) — /api/frames 소비, 실패 시 frames.json 폴백
   frontend/          # React SPA 소스(Vite) — 빌드 산출물은 ui/ 로 나가 /ui 에서 서빙
   ui/                # frontend/ 빌드 산출물(커밋됨) — 소스 수정 없인 다시 빌드할 필요 없음
   tests/             # pytest 스위트
@@ -149,19 +148,19 @@ uvicorn --app-dir .. complaint_processing.api:app --reload   # http://127.0.0.1:
 | `POST /api/skills/rights-guide` | skills | `ConsumerRightsGuide` (#6 · 소비자 권익 보호 안내) |
 | `POST /api/skills/general-guidance` | skills | `GeneralGuidance` (#7 · 비법률 일반 민원 안내) |
 
-`GET /api/frames?case=general` 로 비법률 일반 민원(general 트랙) 트리아지 데모도 볼 수 있습니다
-(viewer.html 상단 **⚖ 법률 민원 / 🧭 일반 민원** 토글).
+`GET /api/frames?case=general` 로 비법률 일반 민원(general 트랙) 트리아지도 볼 수 있습니다
+(개발용 viewer.html 상단 **⚖ 법률 민원 / 🧭 일반 민원** 토글).
 
 각 요청 body의 `options`(`use_llm`/`provider`/`retrieval`/`critic`)가 `get_backend`로 그대로
 흘러갑니다. 기본은 오프라인 더미라 키·네트워크 없이 즉시 응답합니다.
 
-**프론트엔드 — 세 갈래**: FastAPI 한 서버가 전부 같은 오리진에서 서빙합니다(Docker도 동일).
+**프론트엔드**: FastAPI 한 서버가 전부 같은 오리진에서 서빙합니다(Docker도 동일).
 
-- `/viewer.html`·`/mediation.html` — 원래 콘솔. 먼저 `/api/frames`·`/api/mediation`을 부르고
-  실패하면 정적 `frames.json`·`mediation.json`으로 폴백(`file://`로 직접 열어도 동작). `mediation.html`은
-  정적 재생 모드 외에 **라이브 중재 모드**도 지원 — 세션 시작 전 `GPT-5 nano`/`mini`를 고를 수 있다.
-- `/ui` — 관리자 시연용 React SPA(`frontend/`, Vite 빌드 산출물이 `ui/`에 커밋됨). 캔드 데이터는
-  `demo_api.py`/`demo_store.py`, 일부 화면은 `provider` 선택 드롭다운으로 실제 스킬 API를 직접 호출.
+- `/ui` — 실제 사용자 화면인 React SPA(`frontend/`, Vite 빌드 산출물이 `ui/`에 커밋됨).
+  입구는 **민원인 포털**과 **직원 포털** 둘이며, 협상·중재는 직원 포털의 콘솔
+  (`/ui/#/staff/mediation`) 한 곳에서 진행하고 민원인은 진행현황에서 그 내역을 본다.
+  데이터는 DB(`demo_api.py`/`demo_db.py`), AI 호출은 버튼 단위로 `/api/skills/*`.
+- `/viewer.html` — 파이프라인 프레임 뷰어(개발용). `/api/frames`를 부르고 실패하면 `frames.json` 폴백.
 
 각 요청 body/쿼리의 `provider`는 `mlapi-nano`(기본, 빠름)·`mlapi-mini`(고품질, 느림)·`proxy`
 (chonnam-clone 필요) 중 하나입니다 — 자세한 키 발급 경로는 [`docs/SETUP.md`](docs/SETUP.md) 참고.

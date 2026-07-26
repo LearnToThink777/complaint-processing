@@ -15,7 +15,7 @@ from __future__ import annotations
   /openapi.json
 을 자동 생성하게 한다 — 별도 Swagger 정의 파일이 필요 없다.
 
-정적 프론트(viewer.html/mediation.html/frames.json/mediation.json)도 같은 오리진에서
+정적 프론트(viewer.html/frames.json/mediation.json)도 같은 오리진에서
 서빙하므로(맨 끝 StaticFiles 마운트), 브라우저는 CORS 없이 /api/* 를 부르고
 서버가 없을 때만 정적 JSON 으로 폴백한다.
 
@@ -254,7 +254,7 @@ def _record_skill_perf(task: str, provider: str, t0: float, *, outcome: str, err
 _TAGS = [
     {"name": "pipeline", "description": "전체 민원 처리 파이프라인 실행 → viewer.html 프레임."},
     {"name": "skills", "description": "LLM 이 실제로 판단/작문하는 5개 지점을 개별 엔드포인트로."},
-    {"name": "mediation", "description": "상담·검사 중재 기록 → mediation.html."},
+    {"name": "mediation", "description": "상담·검사 중재 기록(중재 콘솔 시드)."},
 ]
 
 app = FastAPI(
@@ -362,7 +362,7 @@ def get_frames(case: str = "default") -> list[dict[str, Any]]:
 def get_mediation() -> list[MediationRecord]:
     """mediation.json(정적 픽스처, 레코드 배열)을 MediationRecord 목록으로 검증해 돌려준다.
 
-    mediation.html 과 viewer.html 이 부른다(둘 다 배열로 소비: .map/.findIndex).
+    라이브 중재 세션(mediation_live)의 시나리오 시드이자 viewer.html 의 참조 데이터다.
     """
     path = _PKG_DIR / "mediation.json"
     if not path.exists():
@@ -546,7 +546,7 @@ if _UI_DIR.exists():
 
 
 # ---- 정적 프론트 서빙 (맨 끝: /api/* 라우트 뒤에 마운트해야 가림 없음) -----------
-# viewer.html / mediation.html / frames.json / mediation.json 을 같은 오리진에서 서빙.
+# viewer.html / frames.json / mediation.json 을 같은 오리진에서 서빙.
 app.mount("/", StaticFiles(directory=str(_PKG_DIR), html=True), name="static")
 
 

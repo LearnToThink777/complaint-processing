@@ -1,32 +1,43 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAsync, Loading } from '../components.jsx'
 
+const MAX_FILES = 10
+
 export default function NewComplaint() {
+  const nav = useNavigate()
   const { loading, data: types } = useAsync(() => api.complainantProductTypes(), [])
   const [type, setType] = useState(null)
   const [facts, setFacts] = useState('')
-  const [keywords, setKeywords] = useState(null) // 접수 전 AI 쟁점 분석 결과(CaseKeywords)
+  const [files, setFiles] = useState([])
+  const [keywords, setKeywords] = useState(null) // 접수 전 AI 쟁점 확인 결과
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState('')
   const [newTerm, setNewTerm] = useState('')
   const [result, setResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const fileRef = useRef(null)
 
   if (loading || !types) return <Loading />
 
-  // 유형·사실관계가 바뀌면 이전 분석은 낡은 것 → 초기화해 다시 분석하도록 유도.
+  // 유형·내용이 바뀌면 이전 분석은 낡은 것 → 초기화해 다시 확인하도록 유도.
   const onType = (v) => { setType(v); setKeywords(null); setAnalyzeError('') }
   const onFacts = (v) => { setFacts(v); if (keywords) setKeywords(null) }
+
+  const pickFiles = (list) => {
+    const picked = Array.from(list || []).map((f) => f.name)
+    setFiles((prev) => [...prev, ...picked.filter((n) => !prev.includes(n))].slice(0, MAX_FILES))
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   const analyze = async () => {
     if (!type || !facts.trim()) return
     setAnalyzing(true); setAnalyzeError('')
     try {
-      const kw = await api.analyzeComplaint(type, facts)
-      setKeywords(kw)
-    } catch (err) {
-      setAnalyzeError('쟁점 분석에 실패했어요. 분석 없이 바로 접수할 수 있습니다.')
+      setKeywords(await api.analyzeComplaint(type, facts))
+    } catch {
+      setAnalyzeError('지금은 쟁점을 확인하지 못했어요. 확인 없이 그대로 접수하셔도 됩니다.')
     } finally {
       setAnalyzing(false)
     }
@@ -48,17 +59,17 @@ export default function NewComplaint() {
   const submit = async () => {
     if (!type || !facts.trim()) return
     setSubmitting(true)
-    const res = await api.submitComplaint({ product_type: type, facts, attachments: [], keywords })
+    const res = await api.submitComplaint({ product_type: type, facts, attachments: files, keywords })
     setResult(res)
     setSubmitting(false)
   }
 
   if (result) {
     return (
-      <div className="cx-page cx-narrow" style={{ textAlign: 'center', paddingTop: 60 }}>
+      <div className="cx-narrow" style={{ textAlign: 'center', paddingTop: 50 }}>
         <div style={{ fontSize: 54 }}>✅</div>
         <h2 style={{ marginTop: 16 }}>민원이 접수되었어요</h2>
-        <p className="muted">담당자가 곧 검토를 시작합니다.</p>
+        <p className="muted">담당자가 확인 후 검토를 시작하고, 진행 상황은 진행현황에서 알려 드려요.</p>
         <div className="cx-card" style={{ marginTop: 20, textAlign: 'left' }}>
           <div className="row between" style={{ padding: '4px 0' }}>
             <span className="muted">접수번호</span>
@@ -69,8 +80,14 @@ export default function NewComplaint() {
             <span className="badge info">{result.status_ko}</span>
           </div>
         </div>
-        <button className="btn primary block" style={{ marginTop: 20 }} onClick={() => { setResult(null); setType(null); setFacts(''); setKeywords(null); setNewTerm('') }}>
-          확인
+        <button className="cx-btn primary" style={{ width: '100%', marginTop: 20 }} onClick={() => nav('/app/progress')}>
+          진행현황 보기
+        </button>
+        <button
+          className="cx-btn" style={{ width: '100%', marginTop: 8 }}
+          onClick={() => { setResult(null); setType(null); setFacts(''); setFiles([]); setKeywords(null); setNewTerm('') }}
+        >
+          새 민원 접수하기
         </button>
       </div>
     )
@@ -80,24 +97,13 @@ export default function NewComplaint() {
 
   return (
     <div className="cx-narrow">
-      <div className="cx-topbar">
-        <h1>‹ 민원접수</h1>
-        <span style={{ fontSize: 16 }}>❔</span>
-      </div>
-
-      <div style={{ padding: '10px 18px 0' }}>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>새 민원 신청</div>
-        <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>아래 정보를 입력해 주세요.</div>
-      </div>
+      <div className="cx-topbar"><h1>민원접수</h1></div>
+      <p className="cx-case-sub" style={{ margin: '0 2px 6px' }}>
+        어떤 상품에서 어떤 일이 있었는지 알려 주시면 담당자가 검토를 시작해요.
+      </p>
 
       <div className="cx-label">금융상품 유형</div>
-      <select className="cx-select" value={type ?? ''} onChange={(e) => onType(e.target.value || null)}>
-        <option value="">상품 유형 선택</option>
-        {types.map((t) => (
-          <option key={t.key} value={t.key}>{t.label}</option>
-        ))}
-      </select>
-      <div className="cx-chips" style={{ marginTop: 10 }}>
+      <div className="cx-chips">
         {types.map((t) => (
           <button key={t.key} className={`cx-chip ${type === t.key ? 'on' : ''}`} onClick={() => onType(t.key)}>
             {t.label}
@@ -106,36 +112,36 @@ export default function NewComplaint() {
       </div>
 
       <div className="cx-label">
-        사실관계 입력
-        <span className="sub">어떤 일이 있었는지 자세히 적어주세요.</span>
+        어떤 일이 있었나요?
+        <span className="sub">가입·상담 시점, 들으신 설명, 확인하고 싶은 점을 적어주세요.</span>
       </div>
       <textarea
         className="cx-textarea"
-        placeholder="사실관계를 입력해 주세요."
+        placeholder="예: 2023년 3월 지점에서 원금이 보장된다는 설명만 듣고 가입했는데, 만기에 원금 손실이 발생했습니다."
         maxLength={1000}
         value={facts}
         onChange={(e) => onFacts(e.target.value)}
       />
       <div className="cx-count">{facts.length} / 1000</div>
 
-      {/* 접수 전 AI 쟁점 분석 — 민원인이 검색어를 몰라도 AI가 쟁점을 잡아준다 */}
+      {/* 접수 전 쟁점 확인 — 민원인은 법률 용어를 모른다. 어떤 쟁점으로 접수되는지 먼저 보여주고
+          직접 빼거나 더할 수 있게 한다(여기서 고른 쟁점이 담당자 검토의 출발점이 된다). */}
       <div className="cx-label">
-        AI 쟁점 분석
-        <span className="sub">제출 전에 어떤 쟁점으로 접수되는지 확인·보정할 수 있어요.</span>
+        검토 쟁점 미리 확인 <span className="sub">선택 · 어떤 쟁점으로 접수되는지 미리 보고 고칠 수 있어요.</span>
       </div>
       {!keywords && (
-        <button className="btn block" disabled={!ready || analyzing} onClick={analyze}>
-          {analyzing ? '분석 중…' : '🔍 AI로 쟁점 분석하기'}
+        <button className="cx-btn" style={{ width: '100%' }} disabled={!ready || analyzing} onClick={analyze}>
+          {analyzing ? '확인 중…' : '쟁점 확인하기'}
         </button>
       )}
-      {analyzeError && <div className="muted" style={{ fontSize: 12, marginTop: 8, color: '#c0392b' }}>{analyzeError}</div>}
+      {analyzeError && <div className="cx-case-sub" style={{ marginTop: 8 }}>{analyzeError}</div>}
 
       {keywords && (
         <div className="cx-card" style={{ marginTop: 6 }}>
           {keywords.summary && (
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>“{keywords.summary}”</div>
           )}
-          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>AI가 파악한 검토 쟁점 (삭제하거나 추가할 수 있어요)</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>이렇게 이해했어요 (눌러서 삭제하거나 아래에서 추가하세요)</div>
           <div className="cx-chips">
             {(keywords.issue_terms || []).map((t) => (
               <button key={t} className="cx-chip on" onClick={() => removeTerm(t)} title="눌러서 삭제">
@@ -143,19 +149,19 @@ export default function NewComplaint() {
               </button>
             ))}
             {(keywords.issue_terms || []).length === 0 && (
-              <span className="muted" style={{ fontSize: 12 }}>추출된 쟁점이 없어요. 직접 추가해 주세요.</span>
+              <span className="muted" style={{ fontSize: 12 }}>확인된 쟁점이 없어요. 직접 추가해 주세요.</span>
             )}
           </div>
           <div className="row" style={{ gap: 8, marginTop: 10 }}>
             <input
               className="cx-select"
               style={{ flex: 1 }}
-              placeholder="쟁점 직접 추가 (예: 설명의무 위반)"
+              placeholder="쟁점 직접 추가 (예: 위험 설명을 듣지 못함)"
               value={newTerm}
               onChange={(e) => setNewTerm(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addTerm() }}
             />
-            <button className="btn" onClick={addTerm} disabled={!newTerm.trim()}>추가</button>
+            <button className="cx-btn" onClick={addTerm} disabled={!newTerm.trim()}>추가</button>
           </div>
           {(keywords.entities || []).length > 0 && (
             <div style={{ marginTop: 12 }}>
@@ -165,22 +171,39 @@ export default function NewComplaint() {
               </div>
             </div>
           )}
-          <button className="btn block" style={{ marginTop: 12 }} disabled={analyzing} onClick={analyze}>
-            {analyzing ? '분석 중…' : '↻ 다시 분석'}
+          <button className="cx-btn" style={{ width: '100%', marginTop: 12 }} disabled={analyzing} onClick={analyze}>
+            {analyzing ? '확인 중…' : '다시 확인하기'}
           </button>
         </div>
       )}
 
       <div className="cx-label">
-        증빙자료 첨부
-        <span className="sub">파일은 최대 10개, 각 10MB까지 첨부 가능</span>
+        증빙자료
+        <span className="sub">최대 {MAX_FILES}개 · 파일 목록이 담당자에게 전달되고, 원본은 담당자 요청 시 제출하시면 돼요.</span>
       </div>
-      <div className="cx-dropzone">📎 파일 선택 또는 드래그</div>
+      <button className="cx-dropzone" onClick={() => fileRef.current?.click()}>📎 파일 선택하기</button>
+      <input ref={fileRef} type="file" multiple hidden onChange={(e) => pickFiles(e.target.files)} />
+      {files.length > 0 && (
+        <div className="cx-files">
+          {files.map((n) => (
+            <div key={n} className="cx-file-row">
+              <span>📄</span>
+              <span className="cx-file-name">{n}</span>
+              <button className="cx-file-del" onClick={() => setFiles(files.filter((x) => x !== n))}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="cx-submit">
-        <button className="btn primary block" disabled={!ready || submitting} onClick={submit}>
-          {submitting ? '제출 중…' : keywords ? '이대로 접수하기' : '제출하기'}
+        <button className="cx-btn primary" style={{ width: '100%' }} disabled={!ready || submitting} onClick={submit}>
+          {submitting ? '제출 중…' : '민원 접수하기'}
         </button>
+        {!ready && (
+          <div className="cx-case-sub" style={{ textAlign: 'center', marginTop: 8 }}>
+            상품 유형과 내용을 입력하시면 접수할 수 있어요.
+          </div>
+        )}
       </div>
     </div>
   )

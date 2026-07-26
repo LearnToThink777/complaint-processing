@@ -221,6 +221,23 @@ def run_verdict_generation(case_id: str, *, provider: str = "mlapi-nano") -> Non
 # 사례는 증거 무게가 다르므로 직원이 구분해서 읽어야 한다.
 _SIMILAR_KIND_KO = {"decision": "분쟁조정 결정례", "admin_decision": "행정 결정례"}
 
+# 코퍼스 메타의 상품유형 코드는 영문이다('fund mis-selling'). 화면 문구에 그대로 쓰면
+# 직원에게 내부 코드가 노출되므로 한국어 상품명으로 옮겨 쓴다.
+_PRODUCT_KO = {
+    "deposit": "예금·적금",
+    "fund": "펀드",
+    "fund mis-selling": "펀드",
+    "ELS mis-selling": "ELS·DLS",
+    "insurance claim": "보험",
+    "loan": "대출",
+    "general": "일반 금융",
+}
+
+
+def _product_ko(product_en: str) -> str:
+    """영문 상품유형 코드 → 화면에 쓰는 한국어 상품명. 모르는 코드는 '해당 상품'."""
+    return _PRODUCT_KO.get(product_en, "해당 상품")
+
 
 def _similar_query(facts: str, keywords: dict[str, Any] | None) -> str:
     """접수 사실 + 접수 시 추출한 키워드로 검색 질의를 만든다(질의 쪽 키워드 브리징)."""
@@ -304,7 +321,7 @@ def search_similar_for_case(
             break
     cases = list(seen.values())
     if not cases:
-        return {**empty, "reasoning": f"'{product_en}' 관련 유사 선례를 찾지 못했습니다."}
+        return {**empty, "reasoning": f"{_product_ko(product_en)} 관련 유사 선례를 찾지 못했습니다."}
 
     # 소요 영업일은 분쟁조정 결정례에만 붙어 있다. 행정 결정례만 잡힌 경우엔 완료일을
     # 추정하지 않고 기한을 그대로 둔다(0영업일로 계산해 '오늘 완료'라고 우기지 않는다).
@@ -323,9 +340,9 @@ def search_similar_for_case(
         timing = " 검색된 선례에 처리 소요일 기록이 없어 완료일 추정은 보류하고 기존 기한을 유지합니다."
 
     if product_matched:
-        lead = f"접수 내용과 같은 '{product_en}' 유형 분쟁조정 결정례 {len(cases)}건"
+        lead = f"접수 내용과 같은 {_product_ko(product_en)} 분쟁조정 결정례 {len(cases)}건"
     elif corpus_widened:
-        lead = (f"'{product_en}' 유형의 분쟁조정 결정례가 없어, 금융위 검사·제재 결정례까지 넓혀 "
+        lead = (f"{_product_ko(product_en)} 분쟁조정 결정례가 없어, 금융위 검사·제재 결정례까지 넓혀 "
                 f"의미상 가장 가까운 선례 {len(cases)}건")
     else:
         lead = f"접수 내용과 의미상 가장 가까운 선례 {len(cases)}건"

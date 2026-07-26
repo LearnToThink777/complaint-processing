@@ -342,7 +342,7 @@ class MediationLogEntry(BaseModel):
 
 
 class MediationRecord(BaseModel):
-    """중재 콘솔이 다루는 상담·검사 1건 전체. mediation.html이 렌더한다."""
+    """중재 콘솔이 다루는 상담·검사 1건 전체. 직원 포털 협상·중재 화면이 렌더한다."""
 
     case_id: str = Field(description="상담/검사 식별자. 예: 'M-2026-0714-002'.")
     domain: str = Field(description="도메인 한 줄. 예: 'ELS 원금손실, 설명의무 위반 민원'.")

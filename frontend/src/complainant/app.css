@@ -337,6 +337,8 @@
   color: var(--muted);
 }
 .cx-dropzone {
+  display: block;
+  width: 100%;
   margin: 0;
   border: 1.5px dashed var(--border-strong);
   border-radius: 12px;
@@ -345,7 +347,42 @@
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
+  font-family: inherit;
   background: var(--panel-2);
+  cursor: pointer;
+}
+.cx-dropzone:hover {
+  border-color: var(--accent);
+}
+/* 첨부한 파일 목록 — 접수 시 파일명이 담당자에게 함께 전달된다. */
+.cx-files {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cx-file-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  font-size: 12.5px;
+}
+.cx-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cx-file-del {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
 }
 .cx-submit {
   margin: 22px 0 8px;
@@ -706,17 +743,53 @@
 }
 
 /* ---- 협상·중재 (민원인) --------------------------------------------------
-   직원 처리현황의 중재 패널과 '같은 사본'을 보여주는 자리. 이중공개(청중별로 다르게
-   쓰는 글)와 달리 중재 기록은 양측에게 동일하다는 것이 이 화면의 전제다. */
-.cx-med {
+   진행현황에는 '진입 카드'만 두고, 내용은 협상·중재 화면(/app/mediation)에서 본다.
+   직원 콘솔과 같은 기록을 보여주되 표현만 민원인 쪽으로 옮긴다 — 이중공개(청중별로
+   다르게 쓰는 글)와 달리 중재 기록은 양측에게 동일하다는 것이 이 화면의 전제다. */
+.cx-med-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 16px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cx-med-entry:hover {
+  border-color: var(--accent);
+}
+.cx-med-entry-main {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
-.cx-med-head {
+.cx-med-entry-arrow {
+  color: var(--muted);
+  font-size: 20px;
+  flex: none;
+}
+.cx-med-intro {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
+  margin-top: 12px;
+}
+.cx-back {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+}
+.cx-med-issues {
+  display: grid;
+  gap: 8px;
 }
 .cx-med-icon {
   width: 36px;
@@ -731,6 +804,7 @@
 .cx-med-input {
   width: 100%;
   box-sizing: border-box;
+  margin: 10px 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -867,19 +941,143 @@
   font-size: 12.5px;
   line-height: 1.65;
 }
-.cx-med-more summary {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 4px 0;
-}
-.cx-med-more .cx-med-input {
-  margin: 8px 0;
-}
-
 @media (max-width: 520px) {
   .cx-med-pair {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- 이력 카드: 민원 하나하나의 진행 요약(누르면 그 민원의 처리 기록으로) ---- */
+.cx-hist-card {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+  align-items: flex-start;
+}
+.cx-hist-card:hover {
+  border-color: var(--navy);
+}
+.cx-hist-main {
+  flex: 1;
+  min-width: 0;
+}
+.cx-hist-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex: none;
+}
+.cx-hist-arrow {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+/* 5단계 미니 스테퍼 — 카드에서 '지금 어디까지 왔는지'가 보이게 */
+.cx-hist-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.cx-hist-steps i {
+  width: 18px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+.cx-hist-steps i.done {
+  background: var(--good);
+}
+.cx-hist-steps i.on {
+  background: var(--navy);
+}
+.cx-hist-steps span {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fg-2);
+}
+.cx-hist-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---- 진행현황: 민원 전환 + 처리 기록(전이) 항목 ---- */
+.cx-caseswitch {
+  margin: 4px 0 14px;
+}
+.cx-caseswitch-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.cx-caseswitch-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.cx-caseswitch-list button {
+  flex: none;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--fg-2);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cx-caseswitch-list button.on {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+/* 처리 기록 한 줄 — 안내 말풍선과 달리 '시스템에 실제로 남은 진행'이라 담백하게 */
+.cx-event {
+  display: flex;
+  gap: 10px;
+  padding: 9px 2px;
+}
+.cx-event-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--good-bg, #e8f7ee);
+  color: var(--good);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+.cx-event-body {
+  flex: 1;
+  min-width: 0;
+}
+.cx-event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cx-event-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--fg);
+}
+.cx-event-text {
+  font-size: 12.5px;
+  color: var(--fg-2);
+  line-height: 1.65;
+  margin-top: 2px;
 }

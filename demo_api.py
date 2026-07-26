@@ -10,13 +10,15 @@ api.py 에서 `app.include_router(demo_router)` 로 한 줄만 얹어 붙인다(
   GET  /api/staff/summary                         직원 홈 요약 카드 + 최근 처리 사건
   GET  /api/staff/intake                           신규 이관 사건 목록
   GET  /api/staff/checklist-plan/{case_id}         선택 사건 AI 자동 검토계획
-  GET  /api/staff/cases/{case_id}                  사건 상세(원장/AI검증/유사사례/기한/재협상)
-  GET  /api/staff/history                           고객 과거 민원 이력(+반복패턴/일관성점수)
+  GET  /api/staff/cases                            처리현황 목록(조건 검색 + 열 정렬)
+  GET  /api/staff/cases/{case_id}                  사건 상세(원장/AI검증/처리기록/기한/중재)
+  GET  /api/staff/mediations                        협상·중재 콘솔 목록(사건별 중재 상태)
+  GET  /api/staff/history                           고객 단위 접수 이력(+요약/반복패턴)
   GET  /api/staff/me                                직원 계정/알림/활동로그/세션
   POST /api/staff/disclosure/publish                이중공개를 청중별로 분리 게시(민원인/직원)
   GET  /api/complainant/home                        민원인 홈
-  GET  /api/complainant/progress                    민원인 진행현황(5단계 타임라인)
-  GET  /api/complainant/history                     민원인 민원 이력
+  GET  /api/complainant/progress                    사건별 진행현황(5단계 + 처리 기록)
+  GET  /api/complainant/history                     민원인 민원 이력(사건별 진행 요약)
   GET  /api/complainant/me                          민원인 프로필/알림/메뉴
   GET  /api/complainant/product-types               민원접수 폼 상품유형
   POST /api/complainant/complaints                  신규 민원 제출(시연용 메모리 접수)
@@ -24,7 +26,7 @@ api.py 에서 `app.include_router(demo_router)` 로 한 줄만 얹어 붙인다(
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -102,9 +104,26 @@ def approve_checklist_plan(case_id: str, session: Session = Depends(get_session)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.get("/staff/cases", summary="처리현황 — 처리 단계 사건 목록(직원이 골라 원장을 본다)")
-def staff_cases(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    return demo_db.staff_cases(session)
+@router.get("/staff/cases", summary="처리현황 — 처리 단계 사건 목록(조건 검색 + 열 정렬)")
+def staff_cases(
+    q: str | None = Query(default=None, description="사건번호·고객명·유형 부분일치 검색어."),
+    status: str | None = Query(
+        default=None,
+        description="상태 필터. 정확한 status 키(reviewing/verdict/negotiating/closed…), "
+        "콤마 구분 다중, 또는 프리셋 all|open|attention. 기본 all.",
+    ),
+    due_soon: bool = Query(default=False, description="True 면 기한 7일 이내·초과 사건만."),
+    sort: str = Query(default="updated_at",
+                      description="정렬 기준 열. case_id|customer|type|status|intake_date|due_date|verdict|updated_at"),
+    order: str = Query(default="desc", description="asc|desc"),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """목록을 조건 없이 전부 실어 보내던 것을 검색·정렬 가능한 목록으로 바꿘 엔드포인트.
+
+    응답은 {rows, total, facets, sort, order, filters} — facets 는 상태 칩에 붙는 건수다.
+    """
+    return demo_db.staff_cases(session, q=q, status=status, due_soon=due_soon,
+                               sort=sort, order=order)
 
 
 @router.get("/staff/cases/{case_id}", summary="처리현황 — 사건 상세(접수 내용 + 원장/판정)")
@@ -220,6 +239,16 @@ def _case_or_404(session: Session, case_id: str):
     return case
 
 
+@router.get("/staff/mediations", summary="협상·중재 콘솔 — 사건별 중재 진행 목록")
+def staff_mediations(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    """중재 콘솔의 좌측 목록 — 처리 중 사건과 각 사건의 중재 상태(없으면 'none').
+
+    직원 화면에서 중재를 보는 자리가 여러 곳으로 흩어져 있던 것을 콘솔 한 곳으로 모으면서
+    생긴 엔드포인트다. 처리현황은 사건별 요약만 보여주고, 진행은 전부 콘솔에서 한다.
+    """
+    return demo_db.staff_mediations(session)
+
+
 @router.get("/staff/cases/{case_id}/mediation", summary="협상·중재 — 이 사건의 중재 내역")
 def staff_mediation(case_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     case = _case_or_404(session, case_id)
@@ -298,8 +327,9 @@ def staff_mediation_turn(case_id: str, session: Session = Depends(get_session)) 
         max_turns=sess.max_turns, done=sess.done)
 
 
-@router.get("/staff/history", summary="이력 — 고객 과거 민원 + 반복패턴 + 일관성점수")
-def staff_history(customer: str | None = None,
+@router.get("/staff/history", summary="고객 이력 — 사람 단위 접수 이력 + 요약 + 반복패턴")
+def staff_history(customer: str | None = Query(default=None,
+                                              description="고객명(부분일치 가능). 없으면 접수가 가장 많은 고객."),
                   session: Session = Depends(get_session)) -> dict[str, Any]:
     hist = demo_db.staff_customer_history(session, customer)
     if hist is None:
@@ -351,25 +381,42 @@ def complainant_home(session: Session = Depends(get_session)) -> dict[str, Any]:
     return demo_db.complainant_home(session)
 
 
-@router.get("/complainant/progress", summary="민원인 진행현황(5단계 타임라인)")
-def complainant_progress(session: Session = Depends(get_session)) -> dict[str, Any]:
-    return demo_db.complainant_progress(session)
+@router.get("/complainant/progress", summary="민원인 진행현황 — 사건별 5단계 타임라인 + 처리 기록")
+def complainant_progress(
+    case: str | None = Query(default=None,
+                             description="열려는 사건번호. 없으면 가장 최근 접수 사건."),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """한 민원인이 여러 건을 접수할 수 있으므로 진행현황은 사건 단위로 연다.
+
+    case 를 주면 그 사건의 타임라인(단계별 안내 + 상태 전이 기록)을, 없으면 최근 사건을
+    돌려준다. 내 사건이 아니면 404 — 사건번호 추측으로 남의 사건을 열 수 없다.
+    """
+    try:
+        return demo_db.complainant_progress(session, case)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/complainant/mediation", summary="민원인 — 내 민원의 협상·중재 내역")
-def complainant_mediation(session: Session = Depends(get_session)) -> dict[str, Any]:
+def complainant_mediation(
+    case: str | None = Query(default=None, description="사건번호. 없으면 가장 최근 사건."),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
     """민원인이 자기 사건의 중재 진행을 본다 — 직원 화면과 같은 사본(쟁점 원장·처리이력)."""
-    return {"mediation": demo_db.complainant_mediation(session)}
+    return {"mediation": demo_db.complainant_mediation(session, case)}
 
 
 @router.post("/complainant/mediation/request", summary="민원인 — 협상·중재 요청")
 def complainant_request_mediation(body: MediationRequestBody,
+                                  case: str | None = Query(default=None,
+                                                           description="요청할 사건번호. 없으면 최근 사건."),
                                   session: Session = Depends(get_session)) -> dict[str, Any]:
     """민원인이 자기 사건에 협상·중재를 요청한다. 요청 즉시 양쪽 화면에 기록으로 남는다."""
-    case = demo_db.latest_citizen_case(session)
-    if case is None:
+    target = demo_db.citizen_case_or_none(session, case)
+    if target is None:
         raise HTTPException(status_code=404, detail="진행 중인 민원이 없습니다.")
-    return demo_db.request_mediation(session, case.case_id, requested_by="complainant",
+    return demo_db.request_mediation(session, target.case_id, requested_by="complainant",
                                      reason=body.reason)
 
 

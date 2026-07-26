@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAsync, Loading } from '../components.jsx'
 
@@ -18,13 +19,38 @@ function fmtAt(at) {
   return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// 진행현황 — 민원 1건의 처리 과정. ?case= 로 어떤 민원을 볼지 지정한다(없으면 최근 민원).
+// 여러 건을 접수한 민원인은 이력에서 카드를 눌러 각 민원의 기록으로 들어온다.
 export default function Progress() {
-  const { loading, data, reload } = useAsync(() => api.complainantProgress(), [])
-  if (loading || !data) return <Loading />
-  return <Tracker data={data} onReload={reload} />
+  const [params] = useSearchParams()
+  const caseId = params.get('case')
+  const { loading, data, error } = useAsync(() => api.complainantProgress(caseId), [caseId])
+  const nav = useNavigate()
+
+  if (loading && !data) return <Loading />
+  if (error) {
+    return (
+      <div className="cx-narrow">
+        <div className="cx-topbar"><h1>진행현황</h1></div>
+        <div className="cx-card" style={{ textAlign: 'center', padding: '26px 18px' }}>
+          <div style={{ fontSize: 30 }}>🔍</div>
+          <div className="cx-case-title" style={{ marginTop: 8 }}>민원을 찾을 수 없어요</div>
+          <div className="cx-case-sub" style={{ marginTop: 4 }}>
+            접수번호를 다시 확인해 주세요. 이력에서 민원을 선택하면 바로 열 수 있어요.
+          </div>
+          <button className="cx-btn primary" style={{ marginTop: 14 }} onClick={() => nav('/app/history')}>
+            이력에서 고르기
+          </button>
+        </div>
+      </div>
+    )
+  }
+  if (!data) return <Loading />
+  return <Tracker data={data} />
 }
 
-function Tracker({ data, onReload }) {
+function Tracker({ data }) {
+  const nav = useNavigate()
   // 현재 단계는 기본 펼침. 나머지는 접어두고 클릭으로 펼친다(인터랙티브 트래커).
   const [open, setOpen] = useState(() => new Set([data.current]))
   const toggle = (i) =>
@@ -35,66 +61,103 @@ function Tracker({ data, onReload }) {
     })
 
   const stepClass = (i) => (i < data.current ? 'done' : i === data.current ? 'current' : 'pending')
+  const cases = data.cases || []
+  const total = data.steps.reduce((n, s) => n + (s.entry_count ?? 0), 0)
 
   return (
     <div className="cx-narrow">
       <div className="cx-topbar"><h1>진행현황</h1></div>
 
-      <div className="cx-dday-banner">
-        <span className="icon">⏱️</span>
-        <div style={{ flex: 1 }}>
-          <div className="label">예상 완료일까지 {data.days_left}일 남았어요</div>
-          <div className="big">D-{data.days_left}</div>
+      {/* 접수한 민원이 여러 건이면 여기서 바로 바꿘 볼 수 있게 한다. */}
+      {cases.length > 1 && (
+        <div className="cx-caseswitch">
+          <span className="cx-caseswitch-label">내 민원 {cases.length}건</span>
+          <div className="cx-caseswitch-list">
+            {cases.map((c) => (
+              <button
+                key={c.case_id}
+                className={c.current ? 'on' : ''}
+                onClick={() => nav(`/app/progress?case=${encodeURIComponent(c.case_id)}`)}
+                title={`${c.title} · ${c.status_ko}`}
+              >
+                {c.intake_date} · {c.title.length > 14 ? `${c.title.slice(0, 14)}…` : c.title}
+              </button>
+            ))}
+          </div>
         </div>
-        {data.risk && <span className="badge warn">지연 위험</span>}
-      </div>
+      )}
+
+      {data.case_id && (
+        <div className="cx-dday-banner">
+          <span className="icon">⏱️</span>
+          <div style={{ flex: 1 }}>
+            <div className="label">
+              {data.status === 'closed' ? '처리가 끝난 민원이에요' : `예상 완료일까지 ${data.days_left}일 남았어요`}
+            </div>
+            <div className="big">{data.status === 'closed' ? '종결' : `D-${data.days_left}`}</div>
+          </div>
+          {data.risk && <span className="badge warn">지연 위험</span>}
+        </div>
+      )}
 
       <div className="cx-card" style={{ marginTop: 14 }}>
         <div className="cx-case-title">{data.title}</div>
-        <div className="cx-case-sub">접수일 {data.intake_date}</div>
+        <div className="cx-case-sub">
+          {data.case_id ? `접수번호 ${data.case_id} · 접수일 ${data.intake_date}` : '접수한 민원이 아직 없어요'}
+        </div>
+        {data.case_id && (
+          <div className="cx-case-sub" style={{ marginTop: 4 }}>
+            현재 <b>{data.status_ko}</b> · 처리 기록 {total}건
+          </div>
+        )}
       </div>
 
       <div className="cx-timeline">
         {data.steps.map((s, i) => {
-          const messages = s.messages || []
-          const count = s.message_count ?? messages.length
-          const hasMsg = count > 0
+          const entries = s.entries || []
+          const count = s.entry_count ?? entries.length
+          const hasLog = count > 0
           const isOpen = open.has(i)
           const cls = stepClass(i)
           return (
-            <div key={s.no} className={`cx-step ${cls} ${hasMsg ? 'has-msg' : ''} ${isOpen ? 'open' : ''}`}>
+            <div key={s.no} className={`cx-step ${cls} ${hasLog ? 'has-msg' : ''} ${isOpen ? 'open' : ''}`}>
               <div className="cx-step-dot">{i < data.current ? '✓' : s.no}</div>
               <div className="cx-step-body">
                 <button
                   type="button"
                   className="cx-step-toggle"
-                  onClick={() => hasMsg && toggle(i)}
-                  aria-expanded={hasMsg ? isOpen : undefined}
-                  disabled={!hasMsg}
+                  onClick={() => hasLog && toggle(i)}
+                  aria-expanded={hasLog ? isOpen : undefined}
+                  disabled={!hasLog}
                 >
                   <span className="cx-step-title">{String(s.no).padStart(2, '0')} {s.title}</span>
-                  {hasMsg && <span className="cx-step-count">💬 {count}</span>}
+                  {hasLog && <span className="cx-step-count">🗂 {count}</span>}
                   {s.date && <span className="cx-step-date">{s.date}</span>}
-                  {hasMsg && <span className="cx-chevron" aria-hidden>⌄</span>}
+                  {hasLog && <span className="cx-chevron" aria-hidden>⌄</span>}
                 </button>
 
                 <div className="cx-step-desc">{s.body}</div>
 
-                {hasMsg && isOpen && (
+                {hasLog && isOpen && (
                   <div className="cx-msg-list">
-                    {messages.map((m, k) => {
-                      const meta = SENDER_META[m.sender] || { cls: 'by-system', icon: '💬' }
-                      return (
-                        <div key={k} className={`cx-msg ${meta.cls}`}>
-                          <div className="cx-msg-head">
-                            <span className="cx-msg-sender">{meta.icon} {m.sender}</span>
-                            {m.at && <span className="cx-msg-at">{fmtAt(m.at)}</span>}
+                    {entries.map((e, k) =>
+                      // 같은 단계 안에서 '실제로 일어난 일(처리 기록)'과 '받은 안내(메시지)'를
+                      // 시간순으로 섞어 보여준다 — 정적 카드가 아니라 사건이 어떻게 흘렀는지가 보이게.
+                      e.kind === 'event' ? (
+                        <div key={k} className="cx-event">
+                          <span className="cx-event-dot" aria-hidden>✓</span>
+                          <div className="cx-event-body">
+                            <div className="cx-event-head">
+                              <span className="cx-event-title">{e.title}</span>
+                              {e.at && <span className="cx-msg-at">{fmtAt(e.at)}</span>}
+                            </div>
+                            <div className="cx-event-text">{e.body}</div>
                           </div>
-                          {m.title && <div className="cx-msg-title">{m.title}</div>}
-                          <div className="cx-msg-body">{m.body}</div>
                         </div>
-                      )
-                    })}
+                      ) : (
+                        <Bubble key={k} m={e} />
+                      ),
+                    )}
                   </div>
                 )}
               </div>
@@ -103,141 +166,52 @@ function Tracker({ data, onReload }) {
         })}
       </div>
 
-      {data.case_id && <Mediation mediation={data.mediation} onReload={onReload} />}
+      {data.case_id && <MediationEntry caseId={data.case_id} mediation={data.mediation} />}
     </div>
   )
 }
 
-const MED_STATUS_TONE = { requested: 'warn', open: 'info', closed: 'good' }
-const ISSUE_TONE = { 미확정: 'muted', 확인중: 'info', 자료대기: 'warn', 정리완료: 'good' }
-const LOG_ICON = { 발언: '💬', 자문: '⚖️', 서기: '📝' }
-
-// 협상·중재 — 민원인이 직접 요청하고, 진행 내역을 직원과 '같은 사본'으로 본다.
-// (중재 기록은 이중공개와 달리 청중별로 다르게 쓰지 않는다 — 양측이 동일한 것을 보는 게 핵심.)
-function Mediation({ mediation, onReload }) {
-  const [reason, setReason] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(null)
-  const [openLog, setOpenLog] = useState(false)
-
-  const request = async () => {
-    setBusy(true); setErr(null)
-    try {
-      await api.complainantRequestMediation(reason)
-      setReason('')
-      onReload?.()
-    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
-  }
-
-  const m = mediation
-  const issues = m?.issues || []
-  const log = m?.log || []
-  const partyName = (key) => (m?.parties || []).find((p) => p.key === key)?.role || (key === 'C' ? '중재자' : key)
-
-  if (!m) {
-    return (
-      <div className="cx-card cx-med" style={{ marginTop: 16 }}>
-        <div className="cx-med-head">
-          <span className="cx-med-icon">🤝</span>
-          <div style={{ flex: 1 }}>
-            <div className="cx-case-title">협상·중재 요청</div>
-            <div className="cx-case-sub">
-              검토 결과에 대해 금융회사와 조율이 필요하면 중재를 요청할 수 있어요.
-              중재자가 양측 이야기를 같은 기록으로 정리해 드려요.
-            </div>
-          </div>
-        </div>
-        <textarea
-          className="cx-med-input" rows={2} value={reason}
-          placeholder="어떤 점을 조율하고 싶은지 적어주세요 (선택)"
-          onChange={(e) => setReason(e.target.value)}
-        />
-        {err && <div className="alert bad" style={{ fontSize: 12.5 }}>⚠ {err}</div>}
-        <button className="cx-btn primary" onClick={request} disabled={busy}>
-          {busy ? '요청 중…' : '협상·중재 요청하기'}
-        </button>
+function Bubble({ m }) {
+  const meta = SENDER_META[m.sender] || { cls: 'by-system', icon: '💬' }
+  return (
+    <div className={`cx-msg ${meta.cls}`}>
+      <div className="cx-msg-head">
+        <span className="cx-msg-sender">{meta.icon} {m.sender}</span>
+        {m.at && <span className="cx-msg-at">{fmtAt(m.at)}</span>}
       </div>
-    )
-  }
+      {m.title && <div className="cx-msg-title">{m.title}</div>}
+      <div className="cx-msg-body">{m.body}</div>
+    </div>
+  )
+}
+
+const MED_TONE = { requested: 'warn', open: 'info', closed: 'good' }
+
+// 협상·중재 진입 카드 — 내용은 담지 않고 '들어가는 문'만 둔다.
+// (예전엔 진행현황 안에 중재 화면 전체가 들어 있어, 같은 내용이 직원 콘솔과 두 벌로 있었다.)
+function MediationEntry({ caseId, mediation }) {
+  const nav = useNavigate()
+  const m = mediation
+  const issues = (m?.issues || []).length
 
   return (
-    <div className="cx-card cx-med" style={{ marginTop: 16 }}>
-      <div className="cx-med-head">
-        <span className="cx-med-icon">🤝</span>
-        <div style={{ flex: 1 }}>
-          <div className="cx-case-title">협상·중재 진행</div>
-          <div className="cx-case-sub">
-            {m.requested_by_subject || m.requested_by_ko} 요청 · {m.domain || '조율 진행 중'}
-          </div>
-        </div>
-        <span className={`badge ${MED_STATUS_TONE[m.status] || 'muted'}`}>{m.status_ko}</span>
-      </div>
-
-      {m.reason && (
-        <div className="cx-med-reason">
-          <b>요청 내용</b>
-          <div style={{ whiteSpace: 'pre-wrap' }}>{m.reason}</div>
-        </div>
-      )}
-
-      {m.boundary && <div className="cx-med-note">⚖️ {m.boundary}</div>}
-
-      {issues.length === 0 ? (
-        <div className="cx-med-empty">
-          아직 정리된 쟁점이 없어요. 중재가 진행되면 어떤 점이 쟁점인지, 각 쟁점에서
-          어느 쪽에 유리·불리한 사실이 있는지 여기에 정리해 드릴게요.
-        </div>
-      ) : (
-        <div className="cx-med-issues">
-          <div className="cx-med-subhead">쟁점별 정리 ({issues.length}건)</div>
-          {issues.map((it, i) => (
-            <div key={i} className="cx-med-issue">
-              <div className="cx-med-issue-top">
-                <span className="cx-med-issue-title">{it.title}</span>
-                <span className={`badge ${ISSUE_TONE[it.status] || 'muted'}`}>{it.status}</span>
-              </div>
-              <div className="cx-med-issue-code">{it.code}</div>
-              <div className="cx-med-pair">
-                <div className="pro"><b>고객님께 유리</b><span>{it.for_a}</span></div>
-                <div className="con"><b>고객님께 불리</b><span>{it.against_a}</span></div>
-              </div>
-              <div className="cx-med-decider">이 쟁점의 최종 판단은 <b>{it.decider}</b>가 합니다.</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {log.length > 0 && (
-        <>
-          <button className="cx-med-toggle" onClick={() => setOpenLog((v) => !v)}>
-            진행 기록 {log.length}건 {openLog ? '접기 ⌃' : '펼치기 ⌄'}
-          </button>
-          {openLog && (
-            <div className="cx-med-log">
-              {log.map((l, i) => (
-                <div key={i} className="cx-med-log-row">
-                  <span className="cx-med-log-icon">{LOG_ICON[l.kind] || '•'}</span>
-                  <div>
-                    <div className="cx-med-log-who">{partyName(l.speaker)} · {l.kind}</div>
-                    <div className="cx-med-log-text">{l.text}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {err && <div className="alert bad" style={{ fontSize: 12.5, marginTop: 8 }}>⚠ {err}</div>}
-      <details className="cx-med-more">
-        <summary>추가로 조율하고 싶은 점 전달하기</summary>
-        <textarea className="cx-med-input" rows={2} value={reason}
-                  placeholder="추가로 전달할 내용을 적어주세요"
-                  onChange={(e) => setReason(e.target.value)} />
-        <button className="cx-btn" onClick={request} disabled={busy || !reason.trim()}>
-          {busy ? '전달 중…' : '전달하기'}
-        </button>
-      </details>
-    </div>
+    <button
+      className="cx-card cx-med-entry"
+      onClick={() => nav(`/app/mediation?case=${encodeURIComponent(caseId)}`)}
+    >
+      <span className="cx-med-icon">🤝</span>
+      <span className="cx-med-entry-main">
+        <span className="cx-case-title">협상·중재</span>
+        <span className="cx-case-sub">
+          {m
+            ? issues
+              ? `쟁점 ${issues}건이 정리되어 있어요 — 눌러서 확인하세요`
+              : '중재 진행 내용을 확인하세요'
+            : '검토 결과에 대해 금융회사와 조율이 필요하면 중재를 요청할 수 있어요'}
+        </span>
+      </span>
+      {m && <span className={`badge ${MED_TONE[m.status] || 'muted'}`}>{m.status_ko}</span>}
+      <span className="cx-med-entry-arrow">›</span>
+    </button>
   )
 }

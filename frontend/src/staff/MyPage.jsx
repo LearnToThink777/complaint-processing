@@ -15,7 +15,7 @@ export default function MyPage() {
     <div>
       <div className="page-head">
         <h1>마이페이지</h1>
-        <p>계정 정보와 알림 설정, 최근 활동 내역을 관리하세요.</p>
+        <p>계정 정보와 알림 설정, 최근 처리 활동을 확인합니다.</p>
       </div>
 
       <div className="split">
@@ -29,7 +29,6 @@ export default function MyPage() {
               <div className="kv"><span className="k">직급</span><span className="v">{acc.rank}</span></div>
               <div className="kv"><span className="k">이메일</span><span className="v">{acc.email}</span></div>
               <div className="kv"><span className="k">휴대폰</span><span className="v">{acc.phone}</span></div>
-              <button className="btn block" style={{ marginTop: 14 }}>정보 수정</button>
             </div>
           </div>
 
@@ -56,9 +55,8 @@ export default function MyPage() {
         <div style={{ display: 'grid', gap: 18 }}>
           <div className="card">
             <div className="panel-head"><h2>계정 관리</h2></div>
-            <div className="panel-pad row gap12">
-              <button className="btn" style={{ flex: 1 }}>🔒 비밀번호 변경</button>
-              <button className="btn danger" style={{ flex: 1 }} onClick={() => nav('/')}>↪ 로그아웃</button>
+            <div className="panel-pad">
+              <button className="btn danger block" onClick={() => nav('/')}>로그아웃</button>
             </div>
           </div>
 

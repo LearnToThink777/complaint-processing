@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import './styles/landing.css'
 
+// 첫 화면은 '어느 쪽으로 들어갈지' 고르는 자리다. 이 시스템의 사용자는 민원인과 기관
+// 직원 둘뿐이므로 입구도 둘이다 — 협상·중재는 별도 입구가 아니라 각 포털 안의 기능이다.
 export default function Landing() {
   const nav = useNavigate()
   return (
@@ -10,35 +12,28 @@ export default function Landing() {
           <span className="landing-logo">🛡️</span>
           <div>
             <h1>금융 민원 처리 시스템</h1>
-            <p>AI 검토 · 이중 공개 · 소비자 권익 보호 — 시연 프로토타입</p>
+            <p>민원 접수부터 검토·판정, 협상·중재까지 한 곳에서 처리합니다.</p>
           </div>
         </div>
 
         <div className="landing-cards">
+          <button className="landing-card" onClick={() => nav('/app')}>
+            <div className="lc-icon cx">🙋</div>
+            <h2>민원인 포털</h2>
+            <p>민원을 접수하고 처리 진행 상황을 확인합니다.<br />민원접수 · 진행현황 · 협상·중재 · 이력</p>
+            <span className="lc-cta">민원인으로 들어가기 &rarr;</span>
+          </button>
+
           <button className="landing-card" onClick={() => nav('/staff')}>
             <div className="lc-icon staff">🗂️</div>
-            <h2>직원 대시보드</h2>
-            <p>사건 접수 · 처리현황 · AI 신뢰도 검증 · 이력 · 마이페이지</p>
-            <span className="lc-cta">데스크탑 백오피스 &rarr;</span>
-          </button>
-
-          <button className="landing-card" onClick={() => nav('/app')}>
-            <div className="lc-icon cx">🌐</div>
-            <h2>민원인 포털</h2>
-            <p>민원 접수 · 진행현황 · 이력 · 알림 설정</p>
-            <span className="lc-cta">웹 포털 &rarr;</span>
-          </button>
-
-          <button className="landing-card" onClick={() => { window.location.href = '/mediation.html' }}>
-            <div className="lc-icon med">🤝</div>
-            <h2>협상·중재 콘솔</h2>
-            <p>쟁점 원장 · 중립성 밸런스 · 실시간 LLM 중재 시뮬레이션</p>
-            <span className="lc-cta">중재 콘솔 &rarr;</span>
+            <h2>직원 포털</h2>
+            <p>배정된 사건을 검토하고 판정·중재를 진행합니다.<br />사건접수 · 처리현황 · 협상·중재 · 고객 이력</p>
+            <span className="lc-cta">직원으로 들어가기 &rarr;</span>
           </button>
         </div>
 
         <p className="landing-foot">
-          동일한 FastAPI 백엔드(<code>/api/*</code>)를 두 화면이 함께 사용합니다.
+          접수하신 민원의 처리 단계와 결과는 민원인 포털 진행현황에서 언제든 확인하실 수 있습니다.
         </p>
       </div>
     </div>

@@ -18,8 +18,8 @@ export default function Home() {
   return (
     <div>
       <div className="page-head">
-        <h1>홈</h1>
-        <p>{summary.team} · {summary.officer}님, 오늘 처리할 사건을 확인하세요.</p>
+        <h1>업무 요약</h1>
+        <p>{summary.team} {summary.officer}님, 오늘 처리할 사건입니다.</p>
       </div>
 
       <div className="stat-grid">
@@ -52,7 +52,7 @@ export default function Home() {
               <th>고객명</th>
               <th>유형</th>
               <th>처리 상태</th>
-              <th>판정 원장</th>
+              <th>판정 결과</th>
               <th>최근 갱신</th>
               <th>담당자</th>
             </tr>
@@ -60,11 +60,12 @@ export default function Home() {
           <tbody>
             {recent.length === 0 && (
               <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>
-                아직 처리 단계에 들어간 사건이 없습니다. <b>사건접수</b>에서 검토계획을 승인해 보세요.
+                아직 처리 중인 사건이 없습니다. <b>사건접수</b>에서 검토계획을 승인하면 여기에 표시됩니다.
               </td></tr>
             )}
             {recent.map((r) => (
-              <tr key={r.case_id} className="clickable" onClick={() => nav('/staff/status')}>
+              <tr key={r.case_id} className="clickable"
+                  onClick={() => nav(`/staff/status?case=${encodeURIComponent(r.case_id)}`)}>
                 <td className="mono">{r.case_id}</td>
                 <td style={{ fontWeight: 600 }}>{r.customer}</td>
                 <td>{r.type}</td>

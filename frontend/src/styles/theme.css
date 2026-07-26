@@ -264,6 +264,14 @@ button {
   background: var(--warn-bg);
   color: #8a5a08;
 }
+.alert.good {
+  background: var(--good-bg);
+  color: #10693a;
+}
+.alert.info {
+  background: var(--info-bg);
+  color: #1c4bb0;
+}
 .alert .alert-title {
   font-weight: 700;
 }

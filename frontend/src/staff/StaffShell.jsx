@@ -1,11 +1,14 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import './staff.css'
 
+// 업무 흐름 순서 그대로 — 접수 → 처리 → 중재 → 이력. 협상·중재는 예전처럼 외부 콘솔로
+// 튀어 나가지 않고 이 메뉴 안에서 열린다(사건 목록·진행·기록이 모두 한 화면에 있다).
 const NAV = [
   { to: '/staff', end: true, icon: '🏠', label: '홈' },
   { to: '/staff/intake', icon: '📥', label: '사건접수' },
   { to: '/staff/status', icon: '📊', label: '처리현황' },
-  { to: '/staff/history', icon: '🗂️', label: '이력' },
+  { to: '/staff/mediation', icon: '🤝', label: '협상·중재' },
+  { to: '/staff/history', icon: '🗂️', label: '고객 이력' },
   { to: '/staff/mypage', icon: '👤', label: '마이페이지' },
 ]
 
@@ -14,7 +17,7 @@ export default function StaffShell() {
   return (
     <div className="staff-root">
       <aside className="staff-sidebar">
-        <button className="staff-brand" onClick={() => nav('/')}>
+        <button className="staff-brand" onClick={() => nav('/staff')}>
           <span className="staff-brand-logo">🛡️</span>
           <span className="staff-brand-text">
             금융 민원
@@ -29,11 +32,6 @@ export default function StaffShell() {
               <span>{n.label}</span>
             </NavLink>
           ))}
-          <a href="/mediation.html" className="staff-nav-item">
-            <span className="staff-nav-icon">🤝</span>
-            <span>협상·중재</span>
-            <span className="staff-nav-ext">↗</span>
-          </a>
         </nav>
         <div className="staff-user">
           <div className="staff-avatar">홍</div>

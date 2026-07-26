@@ -63,10 +63,14 @@ docker run -p 8000:8000 --env-file .env complaint-processing
 | 화면 | URL | 비고 |
 |---|---|---|
 | Swagger API 문서 | http://localhost:8000/docs | 전체 엔드포인트 확인·테스트 |
-| 관리자 시연용 SPA | http://localhost:8000/ui | React 기반 직원/민원인 대시보드 |
-| 협상 중재 콘솔 | http://localhost:8000/mediation.html | 세션 시작 전 GPT-5 nano/mini 선택 가능 |
+| 서비스 화면(SPA) | http://localhost:8000/ui | 민원인 포털 / 직원 포털 선택 |
+| 직원 포털 | http://localhost:8000/ui/#/staff | 사건접수·처리현황·협상·중재·고객 이력 |
+| 민원인 포털 | http://localhost:8000/ui/#/app | 민원접수·진행현황·협상·중재·이력 |
 
-키를 안 채웠어도 세 화면 모두 정상적으로 뜨고, 실제 LLM이 필요한 부분만 자동으로
+협상·중재 콘솔은 직원 포털 안의 화면(`/ui/#/staff/mediation`)이다 — 예전의 별도
+`mediation.html` 정적 콘솔은 없어졌다.
+
+키를 안 채웠어도 화면은 모두 정상적으로 뜨고, 실제 LLM이 필요한 부분만 자동으로
 더미 데이터로 대체된다.
 
 ## 참고

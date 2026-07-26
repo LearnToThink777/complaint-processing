@@ -75,10 +75,157 @@ _PROCESSING_STATUSES = ("reviewing", "verdict_generating", "verdict", "negotiati
 
 _COMPLETION_DAYS = 40  # 접수 시 예상 완료일 = 접수일 + N일(데모용 단순 규칙)
 
+# ---- 처리 기록(stage_events)의 표현 사전 -------------------------------------
+# 사건이 '어떻게 처리됐는지'의 단일 진실 원천은 stage_events 다. 그동안 이 테이블은
+# 단계 날짜를 뽑는 데만 쓰여서, 화면에는 정적인 카드만 남고 '무슨 일이 있었는지'는
+# 어디에도 안 보였다. 아래 사전이 같은 기록을 청중별 어휘로 옮긴다:
+#   - 직원   : 원문 그대로(actor·note 포함) — 감사 추적이 목적
+#   - 민원인 : 공개해도 되는 전이만, 민원인 말로 — 내부 진행(생성 중 등)은 내보내지 않는다
+_ACTOR_KO = {"citizen": "민원인", "staff": "담당자", "system": "시스템"}
+
+_CITIZEN_EVENT: dict[str, dict[str, str]] = {
+    "intake": {"title": "민원 접수", "body": "민원이 접수되어 담당자가 배정되었어요."},
+    "reviewing": {"title": "검토 착수",
+                  "body": "담당자가 검토 계획을 확정하고 사실관계·법률 검토를 시작했어요."},
+    "verdict": {"title": "검토 완료",
+                "body": "검토가 끝나 결과가 정리되었어요. 자세한 내용은 담당자 안내를 확인해 주세요."},
+    "negotiating": {"title": "협의 진행",
+                    "body": "검토 결과를 바탕으로 금융회사와 협의가 진행되고 있어요."},
+    "closed": {"title": "종결", "body": "모든 절차가 완료되어 민원이 종결되었어요."},
+}
+
+# 처리현황 목록의 '다음 조치' 열 — 담당자가 이 사건에서 무엇을 해야 하는지.
+# 상태만 보여 주면 "그래서 뭘 하면 되나"가 화면에 없다.
+_NEXT_ACTION = {
+    "reviewing": "AI 판정 생성",
+    "verdict_generating": "판정 생성 대기",
+    "verdict": "판정 확정 · 안내문 게시",
+    "negotiating": "협상·중재 진행",
+    "closed": "완료",
+}
+
+# 처리현황 목록에서 정렬 가능한 열. 프론트 테이블 헤더의 sort key 와 1:1.
+CASE_SORT_KEYS = ("case_id", "customer", "type", "status", "intake_date",
+                  "due_date", "verdict", "updated_at")
+
+# 상태 필터 프리셋(정확한 status 키 대신 쓸 수 있는 묶음).
+_STATUS_PRESETS: dict[str, tuple[str, ...]] = {
+    "all": _PROCESSING_STATUSES,
+    "open": ("reviewing", "verdict_generating", "verdict", "negotiating"),
+    "attention": ("reviewing", "verdict"),  # 담당자 조치가 남은 사건
+}
+
 
 def _status_ko(status: str) -> str:
     meta = demo_store.CASE_STATUS.get(status)
     return meta["ko"] if meta else status
+
+
+# 민원인 화면에 찍히는 상태 라벨. 직원용 상태머신 어휘('AI 검토계획 생성 중',
+# '검토계획 승인 대기')는 내부 처리 단계라 민원인에게 그대로 내보내지 않는다 —
+# 5단계 트래커와 같은 어휘로 옮겨 '지금 내 민원이 어디까지 왔는지'만 말한다.
+_CITIZEN_STATUS_KO = ["접수 완료", "검토 중", "판정 완료", "협의 중", "종결"]
+
+
+def _citizen_status_ko(status: str) -> str:
+    return _CITIZEN_STATUS_KO[CITIZEN_STEP.get(status, 0)]
+
+
+# ---- 처리 기록: 사건 1건의 '무슨 일이 있었는지' ------------------------------
+
+
+def _case_stage_events(session: Session, case: Case) -> list[StageEvent]:
+    return session.execute(
+        select(StageEvent).where(StageEvent.case_fk == case.id).order_by(StageEvent.at, StageEvent.id)
+    ).scalars().all()
+
+
+def case_events(session: Session, case: Case) -> list[dict[str, Any]]:
+    """직원용 처리 기록 — 상태 전이 이력 원문(누가·언제·무엇을·왜).
+
+    같은 상태 안에서 일어난 일(판정 수정, 중재 요청 추가 등)도 StageEvent 로 남아 있어
+    from==to 인 행이 섞인다. 그 경우는 상태 변화가 아니라 '처리 메모'로 표시한다.
+    """
+    out = []
+    for ev in _case_stage_events(session, case):
+        moved = ev.from_status != ev.to_status
+        out.append({
+            "at": ev.at.isoformat() if ev.at else None,
+            "actor": ev.actor,
+            "actor_ko": _ACTOR_KO.get(ev.actor, ev.actor),
+            "from_status": ev.from_status,
+            "from_ko": _status_ko(ev.from_status) if ev.from_status else None,
+            "to_status": ev.to_status,
+            "to_ko": _status_ko(ev.to_status),
+            "kind": "transition" if moved else "note",
+            "note": ev.note,
+        })
+    return out
+
+
+def _citizen_entries_by_stage(session: Session, case: Case) -> dict[str, list[dict[str, Any]]]:
+    """민원인용 처리 기록 — 단계별로 '실제 있었던 일(전이)'과 '받은 안내(메시지)'를 시간순 병합.
+
+    전이는 _CITIZEN_EVENT 에 문장이 정의된 것만 넣는다(내부 생성 단계는 제외). 안내 메시지는
+    audience=complainant 만 — 직원·감독기관용 본문은 민원인 기록에 섞이지 않는다.
+    """
+    by_stage: dict[str, list[dict[str, Any]]] = {}
+
+    seen: set[str] = set()
+    for ev in _case_stage_events(session, case):
+        copy = _CITIZEN_EVENT.get(ev.to_status)
+        # 상태가 바뀌지 않은 행(판정 수정 등 내부 처리)은 민원인 기록에 넣지 않는다.
+        if copy is None or ev.from_status == ev.to_status:
+            continue
+        # 판정을 재생성하면 verdict 로 들어오는 전이가 여러 번 쌓인다 — 민원인 입장에서는
+        # 같은 '검토 완료'가 반복될 뿐이므로 단계별로 처음 도달한 시점만 남긴다.
+        if ev.to_status in seen:
+            continue
+        seen.add(ev.to_status)
+        stage = _STATUS_TO_STAGE.get(ev.to_status, "intake")
+        by_stage.setdefault(stage, []).append({
+            "kind": "event",
+            "sender": "시스템",
+            "title": copy["title"],
+            "body": copy["body"],
+            "at": ev.at.isoformat() if ev.at else None,
+            "_sort": ev.at or datetime.min,
+        })
+
+    rows = session.execute(
+        select(CaseMessage)
+        .where(CaseMessage.case_fk == case.id, CaseMessage.audience == "complainant")
+        .order_by(CaseMessage.seq, CaseMessage.id)
+    ).scalars().all()
+    for m in rows:
+        by_stage.setdefault(m.stage_key, []).append({
+            "kind": "message",
+            "sender": m.sender,
+            "title": m.title,
+            "body": m.body,
+            "at": m.at.isoformat() if m.at else None,
+            "_sort": m.at or datetime.min,
+        })
+
+    for entries in by_stage.values():
+        entries.sort(key=lambda e: e["_sort"])
+        for e in entries:
+            e.pop("_sort", None)
+    return by_stage
+
+
+def _last_activity_at(session: Session, case: Case) -> str | None:
+    """이 사건에서 마지막으로 무언가 일어난 시각(전이/안내 중 최신)."""
+    ev = session.execute(
+        select(StageEvent.at).where(StageEvent.case_fk == case.id)
+        .order_by(StageEvent.at.desc(), StageEvent.id.desc())
+    ).scalars().first()
+    msg = session.execute(
+        select(CaseMessage.at).where(CaseMessage.case_fk == case.id)
+        .order_by(CaseMessage.at.desc(), CaseMessage.id.desc())
+    ).scalars().first()
+    stamps = [t for t in (ev, msg, case.updated_at) if t is not None]
+    return max(stamps).isoformat() if stamps else None
 
 
 # ---- 직원: 홈 요약 카드 + 최근 처리 사건 (DB 집계) -------------------------
@@ -155,13 +302,28 @@ def staff_recent_cases(session: Session, limit: int = 5) -> list[dict[str, Any]]
 
 
 def staff_customer_history(session: Session, customer: str | None = None) -> dict[str, Any] | None:
-    """고객 1명의 과거 민원 이력 + 반복 접수 패턴. 전부 DB 실측(예전엔 하드코딩 6행)."""
+    """고객 1명(사람 단위)의 접수 이력 — 처리현황(사건 단위)과 역할이 다르다.
+
+    처리현황은 '지금 처리할 사건'을 찾는 작업 큐이고, 여기는 '이 사람이 그동안 무엇을 몇 번
+    접수했고 각 사건이 어떻게 끝났는지'를 보는 고객 프로필이다. 한 민원인이 여러 건을
+    접수할 수 있으므로 사건 목록 + 요약 통계 + 반복 패턴을 함께 준다. 각 행은 처리현황의
+    그 사건으로 건너갈 수 있게 case_id 를 싣는다.
+
+    customer 는 정확한 이름이 아니어도 된다(부분일치 검색). 없으면 접수가 가장 많은 고객.
+    """
     names = session.execute(select(Case.customer).where(Case.customer != "")).scalars().all()
     if not names:
         return None
-    if customer not in set(names):
-        # 지정이 없거나 없는 고객이면 가장 많이 접수한 고객을 기본으로 보여준다.
-        customer = max(set(names), key=names.count)
+    term = (customer or "").strip()
+    if term and term not in set(names):
+        # 부분일치로 한 번 더 찾아본다 — '지은'으로도 '김지은'을 찾을 수 있게.
+        # 여러 명이 걸리면 접수가 가장 많은 고객을 고른다(검색 의도에 가장 가까운 쪽).
+        hits = [n for n in dict.fromkeys(names) if term.lower() in n.lower()]
+        term = max(hits, key=names.count) if hits else ""
+    if not term:
+        # 지정이 없거나 못 찾으면 가장 많이 접수한 고객을 기본으로 보여준다.
+        term = max(set(names), key=names.count)
+    customer = term
 
     rows = session.execute(
         select(Case).where(Case.customer == customer)
@@ -176,20 +338,49 @@ def staff_customer_history(session: Session, customer: str | None = None) -> dic
          "message": f"동일 유형({top}) 민원이 총 {count}회 접수되었습니다."}
         if count >= 2 else None
     )
+    intake_dates = sorted(c.intake_date for c in rows if c.intake_date)
+
+    out_rows = []
+    for c in rows:
+        med = _get_mediation(session, c)
+        events = _case_stage_events(session, c)
+        out_rows.append({
+            "case_id": c.case_id,
+            "intake_date": c.intake_date,
+            "type": c.complaint_type or _PRODUCT_LABEL.get(c.product_type, "민원"),
+            "channel": c.channel,
+            "status": c.status,
+            "outcome": {"code": c.status, "ko": _status_ko(c.status),
+                        "tone": demo_store.CASE_STATUS.get(c.status, {}).get("tone", "muted")},
+            "result": _verdict_digest(_latest_plan(session, c)) or "-",
+            # 처리 기록이 몇 건 쌓였는지 + 마지막으로 움직인 시각. 사건을 열지 않고도
+            # '이 사건이 실제로 진행되고 있는지'를 목록에서 알 수 있다.
+            "event_count": len(events),
+            "last_activity_at": _last_activity_at(session, c),
+            "mediation_status_ko": (_MEDIATION_STATUS_KO.get(med.status, med.status)
+                                    if med is not None else None),
+            "in_progress": c.status not in ("closed",),
+            "repeat": None,
+        })
 
     return {
         "customer": customer,
         "customer_no": "",  # 데모에는 고객번호 체계가 없다 — 없는 값을 지어내지 않는다.
         "repeat_pattern": pattern,
-        "rows": [{
-            "case_id": c.case_id,
-            "intake_date": c.intake_date,
-            "type": c.complaint_type or _PRODUCT_LABEL.get(c.product_type, "민원"),
-            "outcome": {"code": c.status, "ko": _status_ko(c.status),
-                        "tone": demo_store.CASE_STATUS.get(c.status, {}).get("tone", "muted")},
-            "result": _verdict_digest(_latest_plan(session, c)) or "-",
-            "repeat": None,
-        } for c in rows],
+        "summary": {
+            "total": len(rows),
+            "open": sum(1 for c in rows if c.status != "closed"),
+            "closed": sum(1 for c in rows if c.status == "closed"),
+            "first_intake": intake_dates[0] if intake_dates else None,
+            "last_intake": intake_dates[-1] if intake_dates else None,
+            "types": len(set(types)),
+        },
+        # 검색창 자동완성용 — 접수 건수 많은 순 고객 이름(데모 규모라 전량).
+        "candidates": [
+            {"customer": n, "count": names.count(n)}
+            for n in sorted(dict.fromkeys(names), key=lambda n: -names.count(n))
+        ],
+        "rows": out_rows,
     }
 
 
@@ -230,7 +421,7 @@ def complainant_home(session: Session) -> dict[str, Any]:
             "case_id": case.case_id,
             "title": case.complaint_type or f"{_PRODUCT_LABEL.get(case.product_type, '')} 관련 민원".strip(),
             "status": case.status,
-            "status_ko": _status_ko(case.status),
+            "status_ko": _citizen_status_ko(case.status),
             "intake_date": case.intake_date,
             "expected_completion": case.expected_completion,
             "days_left": _days_left(case.expected_completion),
@@ -245,16 +436,30 @@ def complainant_home(session: Session) -> dict[str, Any]:
     }
 
 
-def complainant_history(session: Session) -> list[dict[str, Any]]:
-    """민원인 이력 — 이 사람이 접수한 민원 전부(최신순). 예전엔 하드코딩 4건."""
+def _citizen_cases(session: Session) -> list[Case]:
+    """민원인 화면이 볼 수 있는 사건 전부(최신 접수순).
+
+    한 민원인이 여러 건을 접수할 수 있으므로 화면(이력·진행현황)은 언제나 목록을 전제로 한다.
+    """
     case = _latest_citizen_case(session)
-    who = case.customer if case else ""
-    rows = session.execute(
-        select(Case).where(Case.channel == "citizen", Case.customer == who)
+    if case is None:
+        return []
+    return session.execute(
+        select(Case).where(Case.channel == "citizen", Case.customer == case.customer)
         .order_by(Case.intake_date.desc(), Case.id.desc())
     ).scalars().all()
+
+
+def complainant_history(session: Session) -> list[dict[str, Any]]:
+    """민원인 이력 — 내가 접수한 민원 전부(최신순) + 사건별 진행 요약.
+
+    예전에는 '유형·접수일·상태'만 있는 정적 카드였다. 민원 하나하나가 어떻게 처리됐는지는
+    어디에도 없었다(진행현황은 가장 최근 사건 하나만 보여줬다). 이제 각 행이 그 사건의
+    진행 단계·기록 건수·마지막 움직임을 함께 실어, 카드를 눌러 그 사건의 처리 기록으로
+    들어갈 수 있게 한다(진행현황?case=…).
+    """
     out = []
-    for c in rows:
+    for c in _citizen_cases(session):
         closed_at = None
         if c.status == "closed":
             at = session.execute(
@@ -262,14 +467,27 @@ def complainant_history(session: Session) -> list[dict[str, Any]]:
                 .order_by(StageEvent.id.desc())
             ).scalars().first()
             closed_at = at.date().isoformat() if at else None
+        entries = _citizen_entries_by_stage(session, c)
+        entry_count = sum(len(v) for v in entries.values())
+        step = CITIZEN_STEP.get(c.status, 0)
+        med = _get_mediation(session, c)
         out.append({
             "case_id": c.case_id,
             "type": c.complaint_type or f"{_PRODUCT_LABEL.get(c.product_type, '')} 관련 민원".strip(),
             "intake_date": c.intake_date,
             "status": c.status,
-            "status_ko": _status_ko(c.status),
+            "status_ko": _citizen_status_ko(c.status),
             "closed_at": closed_at,
             "expected_completion": c.expected_completion,
+            "days_left": _days_left(c.expected_completion),
+            # 5단계 중 몇 번째까지 왔는지 — 카드에 미니 단계 표시를 그린다.
+            "step": step,
+            "step_total": len(_STEP_TEMPLATE),
+            "step_title": _STEP_TEMPLATE[step]["title"],
+            "entry_count": entry_count,
+            "last_activity_at": _last_activity_at(session, c),
+            "mediation_status_ko": (_MEDIATION_STATUS_KO.get(med.status, med.status)
+                                    if med is not None else None),
         })
     return out
 
@@ -403,26 +621,107 @@ def approve_plan(session: Session, case_id: str, approved_by: str = "홍길동")
 # checklist_items 에 영속된 verdict 컬럼에서 조립한다. 유사사례는 case_ai 가 사건별로 실검색.
 
 
-def staff_cases(session: Session) -> list[dict[str, Any]]:
-    """처리 단계(검토계획 승인 이후)에 들어간 사건 목록. 최신순. 직원이 골라 원장을 본다."""
-    rows = session.execute(
-        select(Case).where(Case.status.in_(_PROCESSING_STATUSES))
-        .order_by(Case.updated_at.desc(), Case.id.desc())
-    ).scalars().all()
-    out = []
-    for c in rows:
-        label = c.complaint_type or _PRODUCT_LABEL.get(c.product_type, "민원")
-        out.append({
-            "case_id": c.case_id,
-            "customer": c.customer or "민원인",
-            "type": label,
-            "track": c.track,
-            "status": c.status,
-            "status_ko": _status_ko(c.status),
-            "intake_date": c.intake_date,
-            "has_verdict": c.status in ("verdict", "negotiating", "closed"),
-        })
-    return out
+def _case_row(session: Session, c: Case) -> dict[str, Any]:
+    """처리현황 목록 한 행 — 직원이 '고를지 말지'를 목록에서 판단할 수 있을 만큼 담는다."""
+    plan = _latest_plan(session, c)
+    due = c.due_date or c.expected_completion
+    days_left = _days_left(due)
+    med = _get_mediation(session, c)
+    return {
+        "case_id": c.case_id,
+        "customer": c.customer or "민원인",
+        "type": c.complaint_type or _PRODUCT_LABEL.get(c.product_type, "민원"),
+        "track": c.track,
+        "channel": c.channel,
+        "status": c.status,
+        "status_ko": _status_ko(c.status),
+        "status_tone": demo_store.CASE_STATUS.get(c.status, {}).get("tone", "muted"),
+        "intake_date": c.intake_date,
+        "due_date": due,
+        "days_left": days_left if due else None,
+        "over_deadline_risk": bool(due) and days_left <= 7 and c.status != "closed",
+        "verdict_status": _verdict_status(c, plan),
+        "verdict_digest": _verdict_digest(plan),
+        "item_count": len(plan.items) if plan else 0,
+        "has_verdict": c.status in ("verdict", "negotiating", "closed"),
+        "next_action": _NEXT_ACTION.get(c.status, "-"),
+        "mediation_status": med.status if med is not None else "none",
+        "mediation_status_ko": (_MEDIATION_STATUS_KO.get(med.status, med.status)
+                               if med is not None else None),
+        "last_activity_at": _last_activity_at(session, c),
+        "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+    }
+
+
+def staff_cases(session: Session, *, q: str | None = None, status: str | None = None,
+                due_soon: bool = False, sort: str = "updated_at",
+                order: str = "desc") -> dict[str, Any]:
+    """처리 단계 사건 목록 — 조건 검색 + 열 기준 정렬.
+
+    예전엔 처리 단계 사건을 조건 없이 전부 실어 보냈다(목록이 길어지면 담당자가 사건을
+    찾을 방법이 없었다). 이제 필터·정렬을 서버가 책임진다:
+      q        : 사건번호·고객명·유형 부분일치(대소문자 무시)
+      status   : 정확한 status 키, 콤마 구분 다중, 또는 프리셋(all/open/attention)
+      due_soon : 기한 7일 이내(또는 초과)만
+      sort     : CASE_SORT_KEYS 중 하나 / order: asc|desc
+    반환은 목록만이 아니라 {rows, total, facets, …} — facets 는 상태 필터 칩에 붙는 건수로,
+    상태 조건만 뺀 나머지 조건을 적용해 센다(칩을 눌렀을 때 나올 건수와 같게).
+    """
+    statuses = _STATUS_PRESETS.get((status or "all").strip())
+    if statuses is None:
+        picked = tuple(s.strip() for s in (status or "").split(",") if s.strip())
+        statuses = tuple(s for s in picked if s in _PROCESSING_STATUSES) or _PROCESSING_STATUSES
+
+    stmt = select(Case).where(Case.status.in_(_PROCESSING_STATUSES))
+    term = (q or "").strip()
+    if term:
+        like = f"%{term}%"
+        stmt = stmt.where(
+            Case.case_id.ilike(like) | Case.customer.ilike(like) | Case.complaint_type.ilike(like)
+        )
+    candidates = session.execute(stmt).scalars().all()
+
+    # 파생 열(유형 라벨·기한·판정 진행)은 DB 컬럼이 아니라 조립된 값이다 — 정렬·기한 필터를
+    # 행을 만든 뒤 파이썬에서 처리해, 어떤 열로 정렬해도 같은 값을 기준으로 삼게 한다.
+    rows = [_case_row(session, c) for c in candidates]
+
+    facets = {"all": len(rows)}
+    for key in _PROCESSING_STATUSES:
+        facets[key] = sum(1 for r in rows if r["status"] == key)
+    facets["open"] = sum(1 for r in rows if r["status"] in _STATUS_PRESETS["open"])
+    facets["attention"] = sum(1 for r in rows if r["status"] in _STATUS_PRESETS["attention"])
+    facets["due_soon"] = sum(1 for r in rows if r["over_deadline_risk"])
+
+    rows = [r for r in rows if r["status"] in statuses]
+    if due_soon:
+        rows = [r for r in rows if r["over_deadline_risk"]]
+
+    sort_key = sort if sort in CASE_SORT_KEYS else "updated_at"
+    reverse = (order or "desc").lower() != "asc"
+    _verdict_rank = {"none": 0, "generating": 1, "ready": 2}
+    _status_rank = {s: i for i, s in enumerate(_PROCESSING_STATUSES)}
+
+    def key_of(r: dict[str, Any]):
+        if sort_key == "verdict":
+            return (_verdict_rank.get(r["verdict_status"], 0), r["case_id"])
+        if sort_key == "status":
+            return (_status_rank.get(r["status"], 99), r["case_id"])
+        if sort_key == "due_date":
+            # 기한이 없는 사건은 어느 방향으로 정렬해도 끝으로 보낸다(빈 값이 앞을 막지 않게).
+            return (0 if r["due_date"] else 1, r["due_date"] or "", r["case_id"]) if not reverse \
+                else (1 if r["due_date"] else 0, r["due_date"] or "", r["case_id"])
+        return (r.get(sort_key) or "", r["case_id"])
+
+    rows.sort(key=key_of, reverse=reverse)
+    return {
+        "rows": rows,
+        "total": len(rows),
+        "facets": facets,
+        "sort": sort_key,
+        "order": "desc" if reverse else "asc",
+        "filters": {"q": term, "status": status or "all", "due_soon": due_soon},
+        "sort_keys": list(CASE_SORT_KEYS),
+    }
 
 
 def _verdict_status(case: Case, plan: ReviewPlan | None) -> str:
@@ -564,6 +863,9 @@ def staff_case_detail(session: Session, case_id: str) -> dict[str, Any] | None:
 
     due = case.due_date or case.expected_completion
     days_left = _days_left(due)
+    sibling_count = len(session.execute(
+        select(Case.id).where(Case.customer == case.customer)
+    ).scalars().all()) if case.customer else 1
     return {
         "case_id": case.case_id,
         "type": case.complaint_type or _PRODUCT_LABEL.get(case.product_type, "민원"),
@@ -592,6 +894,25 @@ def staff_case_detail(session: Session, case_id: str) -> dict[str, Any] | None:
         "verdict_options": list(VERDICT_LABELS),
         # 협상·중재 진행(요청/개시/쟁점 원장). 없으면 None — 화면이 '요청 없음'으로 그린다.
         "mediation": mediation_payload(session, case),
+        # 처리 기록 — 이 사건이 어떤 과정을 거쳤는지(감사 추적). 민원인 화면의 기록과 같은 원천.
+        "events": case_events(session, case),
+        # 이 사건에 게시된 내부·감독기관용 안내문(과거 게시분 포함). 예전엔 생성 직후 한 번만
+        # 보이고 어디에도 남지 않았다.
+        "staff_messages": [{
+            "stage_key": m.stage_key,
+            "sender": m.sender,
+            "title": m.title,
+            "body": m.body,
+            "at": m.at.isoformat() if m.at else None,
+        } for m in session.execute(
+            select(CaseMessage)
+            .where(CaseMessage.case_fk == case.id, CaseMessage.audience == "staff")
+            .order_by(CaseMessage.at.desc(), CaseMessage.id.desc())
+        ).scalars().all()],
+        # 고객 단위 맥락 — 같은 고객의 다른 민원이 몇 건인지. 있으면 화면이 '고객 이력'으로
+        # 건너갈 수 있게 한다(처리현황=사건 단위, 고객 이력=사람 단위의 역할 분담).
+        "customer_case_count": sibling_count,
+        "next_action": _NEXT_ACTION.get(case.status, "-"),
     }
 
 
@@ -619,7 +940,7 @@ def start_verdict_generation(session: Session, case_id: str) -> str | None:
 
 
 # ---- 협상·중재: 요청 → 개시 → 턴 진행(사건에 붙여 DB 영속) -----------------
-# 중재 콘솔(mediation.html)의 라이브 세션은 프로세스 메모리에만 있어서, 어느 민원 사건의
+# 중재 라이브 세션은 프로세스 메모리에만 있어서, 어느 민원 사건의
 # 중재인지 이어지지 않았고 민원인·직원 화면 어디에도 내역이 보이지 않았다. 여기서 사건에
 # 붙이고(CaseMediation) 턴마다 레코드를 스냅샷해, 양쪽 화면이 같은 사본을 읽게 한다.
 
@@ -673,7 +994,7 @@ def mediation_payload(session: Session, case: Case) -> dict[str, Any] | None:
         "done": med.status == "closed",
         "requested_at": med.created_at.isoformat() if med.created_at else None,
         "updated_at": med.updated_at.isoformat() if med.updated_at else None,
-        # MediationRecord 원본 — 중재 콘솔(mediation.html)이 그대로 렌더한다.
+        # MediationRecord 원본 — 중재 콘솔 화면이 그대로 렌더한다.
         "record": rec,
         # 앱 화면(직원 처리현황 · 민원인 진행현황)이 바로 쓰는 평면화 뷰.
         "parties": rec.get("parties", []),
@@ -766,9 +1087,47 @@ def save_mediation_session(session: Session, case_id: str, *, sid: str, scenario
     return mediation_payload(session, case) or {}
 
 
-def complainant_mediation(session: Session) -> dict[str, Any] | None:
-    """민원인 화면용 — 지금 보고 있는 사건의 중재 내역."""
-    case = _latest_citizen_case(session)
+def staff_mediations(session: Session) -> list[dict[str, Any]]:
+    """협상·중재 콘솔 목록 — 처리 단계 사건 + 각 사건의 중재 진행 상태.
+
+    콘솔 한 곳에서 '중재가 열린 사건'과 '아직 열지 않은 사건'을 함께 고를 수 있게, 중재가
+    없는 사건도 med_status='none' 으로 함께 준다. 예전엔 중재를 볼 수 있는 곳이 처리현황
+    패널·사이드바 외부 콘솔로 흩어져 있었는데, 이 목록이 그 단일 진입점의 원천이다.
+    정렬은 손이 가야 하는 순서 — 진행 중 → 요청됨 → 종결 → 미개시.
+    """
+    rows = session.execute(
+        select(Case).where(Case.status.in_(_PROCESSING_STATUSES))
+        .order_by(Case.updated_at.desc(), Case.id.desc())
+    ).scalars().all()
+    out = []
+    for c in rows:
+        med = _get_mediation(session, c)
+        rec = (med.record or {}) if med is not None else {}
+        status = med.status if med is not None else "none"
+        out.append({
+            "case_id": c.case_id,
+            "customer": c.customer or "민원인",
+            "type": c.complaint_type or _PRODUCT_LABEL.get(c.product_type, "민원"),
+            "case_status": c.status,
+            "case_status_ko": _status_ko(c.status),
+            "med_status": status,
+            "med_status_ko": _MEDIATION_STATUS_KO.get(status, "중재 없음"),
+            "requested_by_ko": (_REQUESTER_KO.get(med.requested_by, med.requested_by)
+                                if med is not None else None),
+            "turn_index": med.turn_index if med is not None else 0,
+            "max_turns": med.max_turns if med is not None else 0,
+            "issue_count": len(rec.get("issues", [])),
+            "updated_at": (med.updated_at.isoformat()
+                           if med is not None and med.updated_at else None),
+        })
+    order = {"open": 0, "requested": 1, "closed": 2, "none": 3}
+    out.sort(key=lambda r: order.get(r["med_status"], 9))
+    return out
+
+
+def complainant_mediation(session: Session, case_id: str | None = None) -> dict[str, Any] | None:
+    """민원인 화면용 — 지금 보고 있는 사건의 중재 내역(case_id 없으면 가장 최근 사건)."""
+    case = citizen_case_or_none(session, case_id)
     if case is None:
         return None
     return mediation_payload(session, case)
@@ -815,35 +1174,39 @@ def _days_left(expected: str | None) -> int:
         return 0
 
 
-def _complainant_messages_by_stage(session: Session, case: Case) -> dict[str, list[dict[str, Any]]]:
-    """이 사건의 민원인용(audience=complainant) 메시지를 stage_key 로 묶어 돌려준다.
+def citizen_case_or_none(session: Session, case_id: str | None) -> Case | None:
+    """민원인 화면이 열려는 사건 — case_id 가 있으면 그 사건, 없으면 가장 최근 사건.
 
-    각 메시지는 진행현황 폴딩 카드가 그대로 렌더할 수 있는 형태({sender/title/body/at}).
-    이중공개의 민원인용 본문 + 시드/제출 안내가 여기 함께 모인다.
+    민원인은 자기가 접수한 사건만 볼 수 있어야 한다. case_id 가 citizen 채널이 아니거나
+    다른 고객의 사건이면 None 을 돌려준다(라우트가 404) — 이관 사건(다른 고객)이 사건번호
+    추측만으로 열리면 안 된다.
     """
-    rows = session.execute(
-        select(CaseMessage)
-        .where(CaseMessage.case_fk == case.id, CaseMessage.audience == "complainant")
-        .order_by(CaseMessage.seq, CaseMessage.id)
-    ).scalars().all()
-    by_stage: dict[str, list[dict[str, Any]]] = {}
-    for m in rows:
-        by_stage.setdefault(m.stage_key, []).append({
-            "sender": m.sender,
-            "title": m.title,
-            "body": m.body,
-            "at": m.at.isoformat() if m.at else None,
-        })
-    return by_stage
+    if not case_id:
+        return _latest_citizen_case(session)
+    case = _get_case(session, case_id)
+    if case is None or case.channel != "citizen":
+        return None
+    latest = _latest_citizen_case(session)
+    if latest is not None and case.customer != latest.customer:
+        return None
+    return case
 
 
-def complainant_progress(session: Session) -> dict[str, Any]:
-    case = _latest_citizen_case(session)
+def complainant_progress(session: Session, case_id: str | None = None) -> dict[str, Any]:
+    """민원인 진행현황 — 사건 1건의 5단계 타임라인 + 단계별 처리 기록.
+
+    예전엔 가장 최근 사건 하나만 열 수 있어서, 여러 건을 접수한 민원인은 지난 민원이
+    어떻게 처리됐는지 볼 방법이 없었다. 이제 case_id 로 사건을 지정할 수 있고, 각 단계에는
+    받은 안내(메시지)와 실제로 일어난 일(상태 전이)이 시간순으로 함께 쌓인다.
+    """
+    case = citizen_case_or_none(session, case_id)
     if case is None:
-        empty_steps = [{**tpl, "date": None, "messages": [], "message_count": 0} for tpl in _STEP_TEMPLATE]
+        if case_id:  # 지정한 사건이 없거나 내 사건이 아니다 — 조용히 다른 사건을 보여주지 않는다.
+            raise LookupError("민원을 찾을 수 없습니다.")
+        empty_steps = [{**tpl, "date": None, "entries": [], "entry_count": 0} for tpl in _STEP_TEMPLATE]
         return {"case_id": None, "title": "진행 중인 민원이 없어요", "intake_date": None,
                 "expected_completion": None, "days_left": 0, "risk": False, "current": 0,
-                "steps": empty_steps, "mediation": None}
+                "steps": empty_steps, "mediation": None, "cases": []}
 
     current = CITIZEN_STEP.get(case.status, 0)
     # 상태 전이 시점을 각 단계 날짜로 표기(승인=reviewing, 판정=verdict, …).
@@ -863,7 +1226,7 @@ def complainant_progress(session: Session) -> dict[str, Any]:
         if at is not None:
             stage_date[stage_key] = at.date().isoformat()
 
-    messages_by_stage = _complainant_messages_by_stage(session, case)
+    entries_by_stage = _citizen_entries_by_stage(session, case)
 
     steps = []
     for i, tpl in enumerate(_STEP_TEMPLATE):
@@ -872,26 +1235,36 @@ def complainant_progress(session: Session) -> dict[str, Any]:
             step["date"] = case.intake_date
         else:
             step["date"] = stage_date.get(tpl["key"])
-        msgs = messages_by_stage.get(tpl["key"], [])
-        step["messages"] = msgs
-        step["message_count"] = len(msgs)
+        entries = entries_by_stage.get(tpl["key"], [])
+        step["entries"] = entries
+        step["entry_count"] = len(entries)
         steps.append(step)
 
     days_left = _days_left(case.expected_completion)
     title = case.complaint_type or f"{_PRODUCT_LABEL.get(case.product_type, '')} 관련 민원".strip()
+    # 사건 전환용 목록 — 여러 건을 접수한 민원인이 진행현황에서 바로 사건을 바꿀 수 있게.
+    cases = [{
+        "case_id": c.case_id,
+        "title": c.complaint_type or f"{_PRODUCT_LABEL.get(c.product_type, '')} 관련 민원".strip(),
+        "intake_date": c.intake_date,
+        "status_ko": _citizen_status_ko(c.status),
+        "current": c.case_id == case.case_id,
+    } for c in _citizen_cases(session)]
     return {
         "case_id": case.case_id,
         "title": title,
         "status": case.status,
-        "status_ko": _status_ko(case.status),
+        "status_ko": _citizen_status_ko(case.status),
         "intake_date": case.intake_date,
         "expected_completion": case.expected_completion,
         "days_left": days_left,
-        "risk": days_left <= 7,
+        "risk": days_left <= 7 and case.status != "closed",
         "current": current,
         "steps": steps,
         # 협상·중재 진행(요청·쟁점 원장). 없으면 None — 화면이 '중재 요청' 버튼만 그린다.
         "mediation": mediation_payload(session, case),
+        # 내가 접수한 민원 목록(사건 전환용). 1건이면 화면이 전환 UI 를 그리지 않는다.
+        "cases": cases,
     }
 
 

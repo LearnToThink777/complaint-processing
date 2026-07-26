@@ -5,7 +5,7 @@ from __future__ import annotations
 정적 `mediation.json` 이 '완성된 상담 1건'이라면, 여기 세션은 그 레코드를 한 발언씩
 '진행하면서' 만들어낸다. 각 턴은 LLM 을 1회 부르고(task="mediation_turn"), 돌아온
 델타(MediationTurnResult)에 **seq/refs 번호를 스토어가 부여**해 record 에 병합한다.
-그래서 mediation.html 의 표시 불변식(`min(refs) <= curSeq`)이 저절로 성립한다.
+그래서 중재 콘솔의 표시 불변식(`min(refs) <= curSeq`)이 저절로 성립한다.
 
 폴백: 키가 없거나(use_llm=False) LLM 이 실패하면, 같은 시나리오의 정적 레코드를
 '스크립트'로 삼아 한 발언씩 되짚어 재생한다 — 기존 정적 데모와 동일한 결과가 나온다.
