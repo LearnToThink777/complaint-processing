@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAsync, Loading } from '../components.jsx'
+import Zikimi from '../Zikimi.jsx'
 
 const FILTERS = [
   { key: 'all', label: '전체' },
@@ -48,7 +49,7 @@ export default function History() {
 
       {rows.length === 0 ? (
         <div className="cx-card" style={{ textAlign: 'center', padding: '26px 18px' }}>
-          <div style={{ fontSize: 30 }}>🗂️</div>
+          <Zikimi pose="search" size={68} style={{ margin: '0 auto' }} />
           <div className="cx-case-title" style={{ marginTop: 8 }}>해당하는 민원이 없어요</div>
           <div className="cx-case-sub" style={{ marginTop: 4 }}>다른 조건을 선택해 보세요.</div>
         </div>

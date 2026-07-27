@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import Zikimi from '../Zikimi.jsx'
 import './app.css'
 
 // 상단 탭은 민원인이 자주 쓰는 다섯 가지로 고정한다. 협상·중재는 별도 탭이 아니라
@@ -18,7 +19,7 @@ export default function AppShell() {
       <header className="cx-appbar">
         <div className="cx-appbar-inner">
           <button className="cx-brand" onClick={() => nav('/app')}>
-            <span className="cx-brand-logo">🛡️</span>
+            <span className="cx-brand-logo"><Zikimi pose="shield" size={28} /></span>
             <span className="cx-brand-text">금융지킴이</span>
           </button>
           <nav className="cx-topnav">
@@ -29,7 +30,15 @@ export default function AppShell() {
               </NavLink>
             ))}
           </nav>
-          <button className="cx-exit" onClick={() => nav('/')}>로그아웃</button>
+          {/* 포털 홈(랜딩)이 민원인↔직원을 오가는 유일한 통로다 — 각 포털 안에는 반대편으로
+              가는 길이 없어서, 상단에 항상 보이는 출구를 둔다. */}
+          <div className="cx-appbar-actions">
+            <button className="cx-portal-home" onClick={() => nav('/')} title="포털 홈 — 직원 화면으로 전환할 수 있어요">
+              <Zikimi pose="base" size={22} />
+              <span>포털 홈</span>
+            </button>
+            <button className="cx-exit" onClick={() => nav('/')}>로그아웃</button>
+          </div>
         </div>
       </header>
       <main className="cx-main">

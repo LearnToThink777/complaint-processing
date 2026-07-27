@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAsync, Loading } from '../components.jsx'
+import Zikimi from '../Zikimi.jsx'
 
 const MAX_FILES = 10
 
@@ -67,7 +68,7 @@ export default function NewComplaint() {
   if (result) {
     return (
       <div className="cx-narrow" style={{ textAlign: 'center', paddingTop: 50 }}>
-        <div style={{ fontSize: 54 }}>✅</div>
+        <Zikimi pose="done" size={96} style={{ margin: '0 auto' }} />
         <h2 style={{ marginTop: 16 }}>민원이 접수되었어요</h2>
         <p className="muted">담당자가 확인 후 검토를 시작하고, 진행 상황은 진행현황에서 알려 드려요.</p>
         <div className="cx-card" style={{ marginTop: 20, textAlign: 'left' }}>

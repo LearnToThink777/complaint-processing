@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAsync, Loading } from '../components.jsx'
+import Zikimi from '../Zikimi.jsx'
 
 // 발신자별 말풍선 스타일/아이콘 — 담당자·민원인·AI·시스템을 색으로 구분한다.
 const SENDER_META = {
@@ -33,7 +34,7 @@ export default function Progress() {
       <div className="cx-narrow">
         <div className="cx-topbar"><h1>진행현황</h1></div>
         <div className="cx-card" style={{ textAlign: 'center', padding: '26px 18px' }}>
-          <div style={{ fontSize: 30 }}>🔍</div>
+          <Zikimi pose="search" size={68} style={{ margin: '0 auto' }} />
           <div className="cx-case-title" style={{ marginTop: 8 }}>민원을 찾을 수 없어요</div>
           <div className="cx-case-sub" style={{ marginTop: 4 }}>
             접수번호를 다시 확인해 주세요. 이력에서 민원을 선택하면 바로 열 수 있어요.

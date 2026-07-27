@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="done-title">
+  <title id="done-title">지킴이 — 문제 해결을 마치고 기뻐하는 모습</title>
+  <defs>
+    <linearGradient id="done-skin" x1="0.35" y1="0.02" x2="0.72" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="55%" stop-color="#f8fafd"/><stop offset="100%" stop-color="#e3e9f2"/>
+    </linearGradient>
+    <radialGradient id="done-blush">
+      <stop offset="0%" stop-color="#f4a3b4" stop-opacity="0.9"/><stop offset="100%" stop-color="#f4a3b4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="done-sh" x="-45%" y="-45%" width="190%" height="190%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#16304f" flood-opacity="0.15"/>
+    </filter>
+    <g id="done-arm"><ellipse rx="12.5" ry="16.5" fill="url(#done-skin)" stroke="#dae1eb" stroke-width="1.6"/></g>
+    <g id="done-spark"><path d="M0-9 2.4-2.4 9 0 2.4 2.4 0 9-2.4 2.4-9 0-2.4-2.4Z"/></g>
+  </defs>
+
+  <g filter="url(#done-sh)">
+    <use href="#done-arm" x="37" y="100" transform="rotate(40 37 100)"/>
+    <use href="#done-arm" x="163" y="100" transform="rotate(-40 163 100)"/>
+
+    <path d="M100 14C64 14 40 62 40 108c0 40 26 66 60 66s60-26 60-66c0-46-24-94-60-94Z"
+          fill="url(#done-skin)" stroke="#dae1eb" stroke-width="1.8"/>
+    <ellipse cx="100" cy="156" rx="38" ry="11" fill="#dbe3ed" opacity="0.35"/>
+    <ellipse cx="75" cy="52" rx="16" ry="10" fill="#ffffff" opacity="0.95" transform="rotate(-26 75 52)"/>
+
+    <ellipse cx="78" cy="98" rx="9.5" ry="12" fill="#1b2330"/>
+    <ellipse cx="122" cy="98" rx="9.5" ry="12" fill="#1b2330"/>
+    <circle cx="74.6" cy="93" r="3.4" fill="#ffffff"/>
+    <circle cx="118.6" cy="93" r="3.4" fill="#ffffff"/>
+    <circle cx="81.5" cy="103.5" r="1.7" fill="#ffffff" opacity="0.75"/>
+    <circle cx="125.5" cy="103.5" r="1.7" fill="#ffffff" opacity="0.75"/>
+    <ellipse cx="100" cy="108" rx="3" ry="2.2" fill="#cfd8e4"/>
+    <path d="M86.5 116c6.5 3.4 20.5 3.4 27 0-0.5 15-6 20-13.5 20s-13-5-13.5-20Z" fill="#1b2330"/>
+    <ellipse cx="59" cy="118" rx="10.5" ry="7" fill="url(#done-blush)"/>
+    <ellipse cx="141" cy="118" rx="10.5" ry="7" fill="url(#done-blush)"/>
+  </g>
+
+  <g fill="#f2b41b"><use href="#done-spark" transform="translate(24,58) scale(1.15)"/></g>
+  <g fill="#4aa3d8" opacity="0.9">
+    <use href="#done-spark" transform="translate(178,52) scale(0.85)"/>
+    <use href="#done-spark" transform="translate(158,26) scale(0.6)"/>
+  </g>
+</svg>

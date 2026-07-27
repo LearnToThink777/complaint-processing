@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import Zikimi from '../Zikimi.jsx'
 import './staff.css'
 
 // 업무 흐름 순서 그대로 — 접수 → 처리 → 중재 → 이력. 협상·중재는 예전처럼 외부 콘솔로
@@ -18,12 +19,18 @@ export default function StaffShell() {
     <div className="staff-root">
       <aside className="staff-sidebar">
         <button className="staff-brand" onClick={() => nav('/staff')}>
-          <span className="staff-brand-logo">🛡️</span>
+          <span className="staff-brand-logo"><Zikimi pose="shield" size={30} /></span>
           <span className="staff-brand-text">
             금융 민원
             <br />
             처리 시스템
           </span>
+        </button>
+        {/* 직원 포털에는 지금까지 바깥으로 나가는 길이 없었다 — 포털 홈(랜딩)으로 돌아가야
+            민원인 화면으로 전환할 수 있으므로 사이드바 맨 위에 출구를 둔다. */}
+        <button className="staff-portal-home" onClick={() => nav('/')} title="포털 홈 — 민원인 화면으로 전환할 수 있어요">
+          <Zikimi pose="base" size={22} />
+          <span>포털 홈</span>
         </button>
         <nav className="staff-nav">
           {NAV.map((n) => (

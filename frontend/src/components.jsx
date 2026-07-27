@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Zikimi from './Zikimi.jsx'
 
 // 비동기 로더 훅 — 로딩/에러/데이터 상태를 한 번에. reload()로 수동 재요청 가능.
 // 다시 불러오는 동안 이전 데이터를 지우지 않는다 — 목록을 갱신할 때마다 화면 전체가
@@ -21,7 +22,12 @@ export function useAsync(fn, deps = []) {
 }
 
 export function Loading({ label = '불러오는 중…' }) {
-  return <div className="spin">{label}</div>
+  return (
+    <div className="spin">
+      <Zikimi pose="wait" size={72} className="zikimi-bob" />
+      <span style={{ marginTop: 6 }}>{label}</span>
+    </div>
+  )
 }
 
 // 상태/톤 배지. solid=강조(색 채움).

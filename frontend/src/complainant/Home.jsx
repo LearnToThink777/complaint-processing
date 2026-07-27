@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAsync, Loading } from '../components.jsx'
+import Zikimi from '../Zikimi.jsx'
 
 const NOTICE_ICON = { megaphone: '📢', document: '📄' }
 
@@ -16,7 +17,7 @@ export default function Home() {
         <div className="wave">👋 안녕하세요</div>
         <h2>{data.greeting_name}님</h2>
         <p>오늘도 금융지킴이가 함께할게요</p>
-        <span className="mascot">🛡️</span>
+        <span className="mascot"><Zikimi pose="wave" size={84} /></span>
       </div>
 
       <div className="cx-section">
@@ -46,7 +47,7 @@ export default function Home() {
       ) : (
         // 진행 중인 민원이 없을 때 빈 화면을 남기지 않는다 — 다음에 할 일을 바로 안내한다.
         <div className="cx-card" style={{ textAlign: 'center', padding: '26px 18px' }}>
-          <div style={{ fontSize: 34 }}>📝</div>
+          <Zikimi pose="base" size={72} style={{ margin: '0 auto' }} />
           <div className="cx-case-title" style={{ marginTop: 8 }}>진행 중인 민원이 없어요</div>
           <div className="cx-case-sub" style={{ marginTop: 4 }}>
             금융상품 이용 중 불편한 점이 있으면 민원을 접수해 주세요.

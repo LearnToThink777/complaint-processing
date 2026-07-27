@@ -17,7 +17,9 @@
   margin-bottom: 32px;
 }
 .landing-logo {
-  font-size: 40px;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
 }
 .landing-brand h1 {
   margin: 0;

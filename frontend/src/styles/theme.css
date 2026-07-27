@@ -306,6 +306,29 @@ button {
   transform: translateX(18px);
 }
 
+/* ---- 마스코트(지킴이) --------------------------------------- */
+.zikimi {
+  user-select: none;
+}
+/* 로딩 중에는 살짝 위아래로 — 화면이 멈춘 게 아니라 기다리는 중임을 보여 준다. */
+@keyframes zikimi-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.zikimi-bob {
+  animation: zikimi-bob 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .zikimi-bob {
+    animation: none;
+  }
+}
+
 /* ---- 유틸 -------------------------------------------------- */
 .row {
   display: flex;

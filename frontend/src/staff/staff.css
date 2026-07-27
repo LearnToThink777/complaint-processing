@@ -29,18 +29,40 @@
   text-align: left;
 }
 .staff-brand-logo {
-  font-size: 22px;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
 }
 .staff-brand-text {
   font-size: 14px;
   font-weight: 800;
   line-height: 1.25;
 }
+.staff-portal-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #b9c9e0;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition: all 0.12s;
+}
+.staff-portal-home:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.3);
+}
 .staff-nav {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 10px;
 }
 .staff-nav-item {
   display: flex;
