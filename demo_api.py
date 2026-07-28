@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from . import demo_db, demo_store, mediation_live, perf
 from .agentic_plan import extract_keywords, run_plan_generation
 from .case_ai import run_verdict_generation, search_similar_for_case
+from .auth.deps import current_identity, customer_id_of, staff_id_of
 from .db import get_session
 from .schemas import CaseKeywords, DualDisclosure
 
@@ -69,13 +70,14 @@ def generate_checklist_plan(
     case_id: str,
     background: BackgroundTasks,
     session: Session = Depends(get_session),
+    identity=Depends(current_identity),
 ) -> dict[str, Any]:
     """이관/시드 사건에 대해 실제 LLM 검토계획 생성을 시작한다(백그라운드).
 
     민원인 제출 사건은 접수 즉시 자동 생성되므로 이 엔드포인트는 직원 화면의 수동
     트리거(재생성 포함)용이다. 반환 즉시 status=plan_generating; 프론트가 폴링한다.
     """
-    scheduled = demo_db.start_generation(session, case_id)
+    scheduled = demo_db.start_generation(session, case_id, staff_id_of(identity))
     if scheduled is None:
         raise HTTPException(status_code=409, detail="지금은 검토계획을 생성할 수 없습니다(이미 진행 중이거나 사건 없음).")
     background.add_task(run_plan_generation, scheduled)
@@ -94,10 +96,11 @@ def perf_summary(task: str | None = None, limit: int = 50,
 
 
 @router.post("/staff/checklist-plan/{case_id}/approve", summary="사건접수 — 검토계획 승인")
-def approve_checklist_plan(case_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
+def approve_checklist_plan(case_id: str, session: Session = Depends(get_session),
+                           identity=Depends(current_identity)) -> dict[str, Any]:
     """직원이 검토계획을 승인 → 사건이 '검토 중'으로 전이(민원인/직원 양쪽 화면 반영)."""
     try:
-        return demo_db.approve_plan(session, case_id)
+        return demo_db.approve_plan(session, case_id, staff_id=staff_id_of(identity))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -139,6 +142,7 @@ def generate_verdict(
     case_id: str,
     background: BackgroundTasks,
     session: Session = Depends(get_session),
+    identity=Depends(current_identity),
 ) -> dict[str, Any]:
     """승인된 검토계획의 항목 전부를 실제 LLM(verdict_batch)으로 판정해 원장을 채운다.
 
@@ -146,7 +150,7 @@ def generate_verdict(
     verdict_status=generating; 프론트가 사건 상세를 폴링해 원장이 채워지길 기다린다.
     """
     try:
-        scheduled = demo_db.start_verdict_generation(session, case_id)
+        scheduled = demo_db.start_verdict_generation(session, case_id, staff_id_of(identity))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -155,6 +159,31 @@ def generate_verdict(
         raise HTTPException(status_code=409, detail="이미 판정을 생성하고 있습니다.")
     background.add_task(run_verdict_generation, scheduled)
     return demo_db.staff_case_detail(session, case_id) or {"case_id": case_id, "verdict_status": "generating"}
+
+
+class CaseCloseRequest(BaseModel):
+    """POST /api/staff/cases/{case_id}/close — 직원이 사건을 종결 처리."""
+
+    outcome: str = Field(description="종결 결과. 사건 상세의 outcome_options 중 하나(accepted|partial|rejected).")
+    note: str = Field(default="", description="처리 기록에 남길 메모(비우면 결과 라벨로 자동 기재).")
+
+
+@router.post("/staff/cases/{case_id}/close", summary="처리현황 — 사건 종결 처리")
+def close_case(case_id: str, req: CaseCloseRequest,
+               session: Session = Depends(get_session),
+               identity=Depends(current_identity)) -> dict[str, Any]:
+    """사건을 '종결'로 전이하고 사람이 내린 결정(수용/일부수용/기각)을 남긴다.
+
+    판정이 안 끝난 검토 항목이 남아 있으면 409 — 원장이 미완인 채로 종결되지 않게 막는다.
+    종결 시각은 별도 컬럼이 아니라 여기서 남는 처리 기록(StageEvent)에서 파생된다.
+    """
+    try:
+        return demo_db.close_case(session, case_id, outcome=req.outcome, note=req.note,
+                                  staff_id=staff_id_of(identity))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 class VerdictOverrideRequest(BaseModel):
@@ -170,7 +199,8 @@ class VerdictOverrideRequest(BaseModel):
 
 @router.patch("/staff/cases/{case_id}/ledger/{seq}", summary="처리현황 — AI 판정을 담당자가 수정·확정")
 def override_verdict(case_id: str, seq: int, req: VerdictOverrideRequest,
-                     session: Session = Depends(get_session)) -> dict[str, Any]:
+                     session: Session = Depends(get_session),
+                     identity=Depends(current_identity)) -> dict[str, Any]:
     """AI 판정은 제안이고 확정은 사람이 한다 — 그 통로.
 
     AI 원안은 ai_original 에 보존되고, 바뀐 행은 '담당자 확정'으로 표시된다. 이후 판정을
@@ -179,7 +209,10 @@ def override_verdict(case_id: str, seq: int, req: VerdictOverrideRequest,
     try:
         return demo_db.override_verdict(
             session, case_id, seq, verdict=req.verdict, ko=req.ko, detail=req.detail,
-            code=req.code, reason=req.reason, staff=req.staff)
+            code=req.code, reason=req.reason,
+            # 요청 본문의 staff 는 클라이언트가 자칭하는 값이다 — 로그인했으면 그 이름이 진실이다.
+            staff=(identity.name if identity is not None else req.staff),
+            staff_id=staff_id_of(identity))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -187,9 +220,10 @@ def override_verdict(case_id: str, seq: int, req: VerdictOverrideRequest,
 
 
 @router.post("/staff/cases/{case_id}/ledger/{seq}/revert", summary="처리현황 — 담당자 수정을 AI 원안으로 되돌림")
-def revert_verdict(case_id: str, seq: int, session: Session = Depends(get_session)) -> dict[str, Any]:
+def revert_verdict(case_id: str, seq: int, session: Session = Depends(get_session),
+                   identity=Depends(current_identity)) -> dict[str, Any]:
     try:
-        return demo_db.revert_verdict(session, case_id, seq)
+        return demo_db.revert_verdict(session, case_id, seq, staff_id=staff_id_of(identity))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -257,9 +291,11 @@ def staff_mediation(case_id: str, session: Session = Depends(get_session)) -> di
 
 @router.post("/staff/cases/{case_id}/mediation/request", summary="협상·중재 — 직원이 중재 요청")
 def staff_request_mediation(case_id: str, body: MediationRequestBody,
-                            session: Session = Depends(get_session)) -> dict[str, Any]:
+                            session: Session = Depends(get_session),
+                            identity=Depends(current_identity)) -> dict[str, Any]:
     try:
-        return demo_db.request_mediation(session, case_id, requested_by="staff", reason=body.reason)
+        return demo_db.request_mediation(session, case_id, requested_by="staff", reason=body.reason,
+                                        staff_id=staff_id_of(identity))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -338,8 +374,36 @@ def staff_history(customer: str | None = Query(default=None,
 
 
 @router.get("/staff/me", summary="마이페이지 — 직원 계정/알림/활동로그/세션")
-def staff_me(session: Session = Depends(get_session)) -> dict[str, Any]:
-    return demo_db.staff_profile(session)
+def staff_me(session: Session = Depends(get_session),
+             identity=Depends(current_identity)) -> dict[str, Any]:
+    return demo_db.staff_profile(session, staff_id_of(identity))
+
+
+class NotificationToggle(BaseModel):
+    """알림 하나를 켜거나 끈다. 그동안 화면 토글이 아무 곳에도 저장되지 않았다."""
+
+    key: str = Field(description="알림 항목 키. 프로필 응답의 notifications[].key 중 하나.")
+    enabled: bool = Field(description="켜기(true) / 끄기(false).")
+
+
+@router.patch("/staff/me/notifications", summary="마이페이지 — 직원 알림 설정 저장")
+def staff_set_notification(req: NotificationToggle,
+                           session: Session = Depends(get_session)) -> dict[str, Any]:
+    me = demo_db.current_staff(session)
+    if me is None:
+        raise HTTPException(status_code=404, detail="직원 계정이 없습니다.")
+    return {"notifications": demo_db.set_notification_setting(
+        session, "staff", me.staff_id, req.key, req.enabled)}
+
+
+@router.patch("/complainant/me/notifications", summary="마이페이지 — 민원인 알림 설정 저장")
+def complainant_set_notification(req: NotificationToggle,
+                                 session: Session = Depends(get_session)) -> dict[str, Any]:
+    me = demo_db.current_customer(session)
+    if me is None:
+        raise HTTPException(status_code=404, detail="민원인 계정이 없습니다.")
+    return {"notifications": demo_db.set_notification_setting(
+        session, "customer", me.customer_id, req.key, req.enabled)}
 
 
 class PublishDisclosureRequest(BaseModel):
@@ -426,8 +490,9 @@ def complainant_history(session: Session = Depends(get_session)) -> list[dict[st
 
 
 @router.get("/complainant/me", summary="민원인 프로필/알림/메뉴")
-def complainant_me() -> dict[str, Any]:
-    return demo_store.complainant_profile()
+def complainant_me(session: Session = Depends(get_session),
+                   identity=Depends(current_identity)) -> dict[str, Any]:
+    return demo_db.complainant_profile(session, customer_id_of(identity))
 
 
 @router.get("/complainant/product-types", summary="민원접수 폼 상품유형")

@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import Zikimi from '../Zikimi.jsx'
+import { auth } from '../api.js'
 import './staff.css'
 
 // 업무 흐름 순서 그대로 — 접수 → 처리 → 중재 → 이력. 협상·중재는 예전처럼 외부 콘솔로
@@ -15,6 +16,7 @@ const NAV = [
 
 export default function StaffShell() {
   const nav = useNavigate()
+  const who = auth.user()
   return (
     <div className="staff-root">
       <aside className="staff-sidebar">
@@ -40,11 +42,14 @@ export default function StaffShell() {
             </NavLink>
           ))}
         </nav>
-        <div className="staff-user">
-          <div className="staff-avatar">홍</div>
+        {/* 이름이 '홍길동'으로 박혀 있어서 누가 로그인해도 같은 사람으로 보였다. 로그인한
+            계정을 보여주고, 로그인하지 않았으면 시연 계정임을 밝힌다(지어내지 않는다). */}
+        <div className="staff-user" onClick={() => nav(who ? '/staff/mypage' : '/login')}
+             role="button" title={who ? '마이페이지' : '로그인'}>
+          <div className="staff-avatar">{(who?.name || '홍길동').slice(0, 1)}</div>
           <div className="staff-user-meta">
-            <strong>홍길동</strong>
-            <span>준법감시팀</span>
+            <strong>{who?.name || '홍길동'}</strong>
+            <span>{who ? '준법감시팀' : '로그인 안 함 · 시연 계정'}</span>
           </div>
         </div>
       </aside>

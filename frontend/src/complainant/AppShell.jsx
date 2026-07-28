@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import Zikimi from '../Zikimi.jsx'
+import { api, auth } from '../api.js'
 import './app.css'
 
 // 상단 탭은 민원인이 자주 쓰는 다섯 가지로 고정한다. 협상·중재는 별도 탭이 아니라
@@ -14,6 +15,7 @@ const TABS = [
 
 export default function AppShell() {
   const nav = useNavigate()
+  const who = auth.user()
   return (
     <div className="cx-web">
       <header className="cx-appbar">
@@ -37,7 +39,15 @@ export default function AppShell() {
               <Zikimi pose="base" size={22} />
               <span>포털 홈</span>
             </button>
-            <button className="cx-exit" onClick={() => nav('/')}>로그아웃</button>
+            {/* 예전엔 첫 화면으로 이동만 하고 토큰은 남았다. 로그인 상태면 실제로 로그아웃하고,
+                안 했으면 로그인 화면으로 안내한다(무엇을 누른 건지 헷갈리지 않게 라벨도 바꾼다). */}
+            {who ? (
+              <button className="cx-exit" onClick={async () => { await api.logout(); nav('/login') }}>
+                로그아웃 ({who.name})
+              </button>
+            ) : (
+              <button className="cx-exit" onClick={() => nav('/login')}>로그인</button>
+            )}
           </div>
         </div>
       </header>
