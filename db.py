@@ -18,10 +18,18 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import Base, Case, CaseMessage, StageEvent
+from .models import (
+    Base,
+    Case,
+    CaseMessage,
+    Customer,
+    NotificationSetting,
+    Staff,
+    StageEvent,
+)
 
 _PKG_DIR = Path(__file__).resolve().parent
 _DEFAULT_DB_PATH = _PKG_DIR / "data" / "complaint.db"
@@ -76,6 +84,113 @@ _SEED_INTAKE: list[dict] = [
     {"case_id": "C-2024-05124", "customer": "김하늘", "product_type": "insurance", "product_en": "insurance claim denial", "type": "보험금 지급거절", "intake_date": "2024-05-21", "track": "legal",
      "facts": "보험금 청구가 고지의무 위반을 이유로 거절됨. 고지 대상 여부와 인과관계에 대한 다툼이 있다."},
 ]
+
+
+# 계정 시드 — 로그인이 붙는 순간 '로그인 가능한 계정 0개'가 되지 않도록 여기서 만든다.
+# 정보의 출처는 demo_store 의 정적 프로필(그동안 화면이 쓰던 값)이라 화면이 그대로 이어진다.
+# 직원을 2명 두는 이유: 담당자가 1명이면 stage_events.actor_id 없이도 우연히 맞아서
+# '남의 활동이 내 활동으로 보이는' 문제를 재현할 수 없다.
+DEMO_CUSTOMER_ID = "CUST-0001"
+DEMO_STAFF_ID = "STAFF-0001"
+
+# 데모 자격증명은 팀 공통이다 — 지영(PR #2 seed.py)·태은(PR #3)이 같은 이메일·비밀번호로
+# 맞춰 두었으므로, 누가 만든 DB 든 서로의 코드로 로그인된다. 바꾸면 그 호환이 깨진다.
+_SEED_CUSTOMERS: list[dict] = [
+    {"customer_id": DEMO_CUSTOMER_ID, "name": "김지은", "email": "jieun.kim@example.com",
+     "phone": "010-2345-6789", "verified": True, "password": "customer1234!"},
+]
+
+_SEED_STAFF: list[dict] = [
+    {"staff_id": DEMO_STAFF_ID, "name": "홍길동", "email": "hong.gildong@internal.com",
+     "dept": "준법감시팀", "rank": "선임조사역", "phone": "010-1234-5678",
+     "password": "employee1234!"},
+    {"staff_id": "STAFF-0002", "name": "이수진", "email": "sujin.lee@internal.com",
+     "dept": "준법감시팀", "rank": "조사역", "phone": "010-8765-4321",
+     "password": "employee1234!"},
+]
+
+# 알림 기본값 — demo_store 의 리터럴 목록과 같은 키를 쓴다(화면 어휘를 그대로 잇는다).
+_SEED_NOTIFS: dict[str, list[tuple[str, bool]]] = {
+    "customer": [("progress", True), ("notice", True), ("event", False)],
+    "staff": [("due_soon", True), ("ai_done", True), ("transfer", True), ("system", False)],
+}
+
+
+def seed_accounts(session: Session) -> None:
+    """민원인·직원 계정과 알림 기본값을 넣는다. 이미 있으면 건너뛴다(멱등).
+
+    비밀번호 해시는 계정을 만들 때 넣지만, **이미 만들어진 계정**(로그인 도입 전에 심어져
+    password_hash 가 빈 행)도 있으므로 아래에서 따로 채워 준다 — 삽입만으로는 그 행에
+    해시가 생기지 않아 로그인이 조용히 실패한다.
+    """
+    from .auth.service import hash_password  # 순환 import 방지 — auth 가 models 를 쓴다
+
+    def _fields(row: dict) -> dict:
+        out = {k: v for k, v in row.items() if k != "password"}
+        out["password_hash"] = hash_password(row["password"])
+        return out
+
+    if not session.execute(select(Customer.customer_id).limit(1)).first():
+        for row in _SEED_CUSTOMERS:
+            session.add(Customer(**_fields(row)))
+    if not session.execute(select(Staff.staff_id).limit(1)).first():
+        for row in _SEED_STAFF:
+            session.add(Staff(**_fields(row)))
+    session.flush()
+
+    # 해시 백필 — 로그인 도입 전에 심어진 계정(빈 password_hash)에만 채운다.
+    # 이미 해시가 있는 계정은 건드리지 않는다(사용자가 바꾼 비밀번호를 시드로 되돌리면 안 된다).
+    for model, id_attr, rows in ((Customer, "customer_id", _SEED_CUSTOMERS),
+                                 (Staff, "staff_id", _SEED_STAFF)):
+        for row in rows:
+            obj = session.execute(
+                select(model).where(getattr(model, id_attr) == row[id_attr])).scalars().first()
+            if obj is not None and not obj.password_hash:
+                obj.password_hash = hash_password(row["password"])
+
+    owners = [("customer", c["customer_id"]) for c in _SEED_CUSTOMERS] + \
+             [("staff", s["staff_id"]) for s in _SEED_STAFF]
+    for owner_type, owner_id in owners:
+        have = {k for (k,) in session.execute(
+            select(NotificationSetting.notif_key)
+            .where(NotificationSetting.owner_type == owner_type,
+                   NotificationSetting.owner_id == owner_id)
+        ).all()}
+        for key, enabled in _SEED_NOTIFS[owner_type]:
+            if key not in have:
+                session.add(NotificationSetting(owner_type=owner_type, owner_id=owner_id,
+                                                notif_key=key, enabled=enabled))
+    session.commit()
+
+
+def link_demo_identities(session: Session) -> None:
+    """계정 도입 전에 쌓인 사건·이력에 소유자를 귀속시킨다(비어 있는 것만).
+
+    이름 매칭 백필을 일반 원칙으로 삼지는 않는다 — 이름은 식별자가 아니고 동명이인을
+    가릴 수 없다. 다만 아래 둘은 귀속이 확실하다:
+
+    1) 시드 페르소나('김지은') 사건 — 우리가 만든 계정이다.
+    2) actor="staff" 인 기존 stage_events — 계정이 없던 동안 직원은 '홍길동' 한 명뿐이었고
+       화면도 그 사건들의 담당자를 홍길동으로 표시해왔다(demo_db.staff_recent_cases).
+       이걸 NULL 로 남기면 '소유자 미상' 행이 남아, 조회 시 모든 직원에게 보이거나
+       아무에게도 안 보이거나 둘 중 하나가 된다 — 둘 다 사실과 다르다.
+
+    시드가 아닌 이름의 사건은 건드리지 않고 NULL(소유자 미상)로 남긴다.
+    """
+    for row in _SEED_CUSTOMERS:
+        session.execute(
+            update(Case).where(Case.customer == row["name"], Case.customer_id.is_(None))
+            .values(customer_id=row["customer_id"])
+        )
+        session.execute(
+            update(StageEvent).where(StageEvent.actor == "citizen", StageEvent.actor_id.is_(None))
+            .values(actor_id=row["customer_id"])
+        )
+    session.execute(
+        update(StageEvent).where(StageEvent.actor == "staff", StageEvent.actor_id.is_(None))
+        .values(actor_id=DEMO_STAFF_ID)
+    )
+    session.commit()
 
 
 def seed_intake(session: Session) -> None:
@@ -207,6 +322,9 @@ def _ensure_columns() -> None:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(cases)"))}
         if "keywords" not in cols:
             conn.execute(text("ALTER TABLE cases ADD COLUMN keywords JSON DEFAULT '{}'"))
+        # 종결 결과(수용/일부수용/기각). 종결 전에는 NULL 이므로 기본값을 두지 않는다.
+        if "outcome" not in cols:
+            conn.execute(text("ALTER TABLE cases ADD COLUMN outcome TEXT"))
 
         # checklist_items 에 규정 판정 컬럼(승인 후 verdict_batch 가 채움)이 없으면 더한다.
         item_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(checklist_items)"))}
@@ -228,6 +346,31 @@ def _ensure_columns() -> None:
         if med_cols and "max_turns" not in med_cols:
             conn.execute(text("ALTER TABLE case_mediations ADD COLUMN max_turns INTEGER DEFAULT 0"))
 
+        # 계정 계층(customers/staff)이 생기면서 사건에 소유자·담당자가 붙는다.
+        # 여기 ALTER 를 빠뜨리고 models.py 에만 선언하면 ORM 이 없는 컬럼을 SELECT 해서
+        # cases 를 건드리는 모든 요청이 OperationalError 로 죽는다 — 반드시 쌍으로 유지한다.
+        # nullable 로만 붙일 수 있다: SQLite 는 NOT NULL(기본값 없음)·UNIQUE·REFERENCES 컬럼을
+        # 기존 테이블에 추가하지 못한다. 그래서 기존 사건은 소유자 미상(NULL)으로 남는다.
+        for col in ("customer_id", "assigned_staff_id"):
+            if col not in cols:
+                conn.execute(text(f"ALTER TABLE cases ADD COLUMN {col} TEXT"))
+
+        # stage_events.actor_id — actor(system|staff|citizen)가 '종류'만 알려주고 '누구'인지는
+        # 몰랐다. 이 블록이 없어서 stage_events 는 그동안 마이그레이션 대상이 아니었다.
+        ev_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(stage_events)"))}
+        if ev_cols and "actor_id" not in ev_cols:
+            conn.execute(text("ALTER TABLE stage_events ADD COLUMN actor_id TEXT"))
+
+        # 인덱스 보정 — create_all 은 기존 테이블을 통째로 건너뛰고 ALTER 는 인덱스를 만들 수
+        # 없다. 이걸 빠뜨리면 새로 만든 DB 만 인덱스를 갖고 기존 DB 는 풀스캔이 되는데
+        # 스키마 diff 로는 눈에 띄지 않는다.
+        for idx, tbl, col in (
+            ("ix_cases_customer_id", "cases", "customer_id"),
+            ("ix_cases_assigned_staff_id", "cases", "assigned_staff_id"),
+            ("ix_stage_events_actor_id", "stage_events", "actor_id"),
+        ):
+            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx} ON {tbl}({col})"))
+
 
 def init_db() -> None:
     """테이블 생성(없으면) + 경량 마이그레이션 + 시드. api.py 기동 시 1회 호출한다."""
@@ -235,5 +378,7 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _ensure_columns()
     with SessionLocal() as session:
+        seed_accounts(session)   # 사건보다 먼저 — 사건이 소유자를 참조한다
         seed_intake(session)
         seed_demo_tracker(session)
+        link_demo_identities(session)  # 계정 도입 전 사건·이력에 소유자 귀속(비어 있는 것만)

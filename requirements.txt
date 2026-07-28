@@ -11,3 +11,7 @@ uvicorn[standard]>=0.30,<1
 httpx>=0.27,<1
 # 영속 계층(db.py/models.py) — 민원 접수→검토계획→승인 흐름을 SQLite 에 저장(더미 대체).
 SQLAlchemy>=2,<3
+# 로그인/인증(auth/) — 비밀번호 해싱 + JWT. bcrypt 는 팀원 브랜치(PR #2/#3)와 동일 방식이라
+# 누가 만든 계정이든 서로의 코드로 검증된다. python-multipart 는 로그인이 JSON 본문을 받으므로 불필요.
+bcrypt>=4,<5
+python-jose[cryptography]>=3.3,<4

@@ -37,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import mediation_live
+from .auth.router import router as auth_router
 from .db import init_db
 from .decorators import CriticBlocked, CriticLLM, unwrap
 from .demo_api import router as demo_router
@@ -535,6 +536,9 @@ def skill_general_guidance(req: GeneralGuidanceRequest) -> Any:
 # 접수→검토계획→승인 흐름은 SQLite(data/complaint.db)에 저장한다. 테이블 생성+시드를 여기서 1회.
 init_db()
 app.include_router(demo_router)
+# 로그인/인증(/api/auth/*). 라우트를 막지는 않고 '누가 요청했는지'만 알려 준다 —
+# 토큰이 없으면 기존 데모 흐름이 시드 계정으로 그대로 동작한다.
+app.include_router(auth_router)
 
 
 # ---- React SPA 서빙 (빌드 산출물) -----------------------------------------

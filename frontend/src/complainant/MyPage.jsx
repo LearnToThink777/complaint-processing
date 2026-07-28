@@ -35,7 +35,13 @@ export default function MyPage() {
             </div>
             <Toggle
               on={n.enabled}
-              onChange={(v) => setNoti(notifications.map((x, j) => (j === i ? { ...x, enabled: v } : x)))}
+              onChange={(v) => {
+                // 먼저 화면을 바꿔 반응을 즉시 보여주고(낙관적), 서버 저장 결과로 확정한다.
+                setNoti(notifications.map((x, j) => (j === i ? { ...x, enabled: v } : x)))
+                api.complainantSetNotification(n.key, v)
+                  .then((r) => r?.notifications && setNoti(r.notifications))
+                  .catch(() => setNoti(notifications))  // 저장 실패 시 원래대로
+              }}
             />
           </div>
         ))}

@@ -24,7 +24,10 @@ from .models import (
     CaseMediation,
     CaseMessage,
     ChecklistItemRow,
+    Customer,
+    NotificationSetting,
     ReviewPlan,
+    Staff,
     StageEvent,
 )
 from .schemas import VERDICT_LABELS, DualDisclosure
@@ -72,6 +75,10 @@ _INTAKE_STATUSES = ("intake", "plan_generating", "plan_ready")
 
 # 처리현황 목록에 노출할 상태(검토계획 승인 이후 = 실제 '처리'에 들어간 사건들).
 _PROCESSING_STATUSES = ("reviewing", "verdict_generating", "verdict", "negotiating", "closed")
+
+# 종결 처리를 허용하는 상태 — 판정이 나온 뒤부터다. close_case 의 서버 검증과 화면의
+# can_close 가 같은 규칙을 봐야 하므로(화면만 막고 API 가 열려 있으면 안 된다) 여기 한 곳에 둔다.
+_CLOSEABLE_STATUSES = ("verdict", "negotiating")
 
 _COMPLETION_DAYS = 40  # 접수 시 예상 완료일 = 접수일 + N일(데모용 단순 규칙)
 
@@ -275,6 +282,19 @@ def staff_summary(session: Session) -> dict[str, Any]:
     }
 
 
+def _outcome_payload(c: Case) -> dict[str, Any]:
+    """사건의 '결과' 배지 — 종결된 사건은 사람이 내린 결정을, 진행 중이면 현재 상태를 보여준다.
+
+    종결 기능이 없던 동안에는 결정 필드가 비어 있어 항상 status 로 대신했다. 이제 종결 시
+    outcome(수용/일부수용/기각)이 남으므로, 있으면 그것을 우선한다.
+    """
+    if c.outcome:
+        meta = demo_store.DECISION_OUTCOMES[c.outcome]
+        return {"code": c.outcome, "ko": meta["ko"], "tone": meta["tone"]}
+    meta = demo_store.CASE_STATUS.get(c.status, {})
+    return {"code": c.status, "ko": meta.get("ko", c.status), "tone": meta.get("tone", "muted")}
+
+
 def staff_recent_cases(session: Session, limit: int = 5) -> list[dict[str, Any]]:
     """최근 손댄 사건 — 처리 단계에 들어간 사건을 갱신 최신순으로."""
     rows = session.execute(
@@ -283,14 +303,11 @@ def staff_recent_cases(session: Session, limit: int = 5) -> list[dict[str, Any]]
     ).scalars().all()
     out = []
     for c in rows:
-        meta = demo_store.CASE_STATUS.get(c.status, {})
         out.append({
             "case_id": c.case_id,
             "customer": c.customer or "민원인",
             "type": c.complaint_type or _PRODUCT_LABEL.get(c.product_type, "민원"),
-            # 사람이 내린 '수용/기각' 결정 필드는 아직 없다 — 지어내지 않고 사건 상태를 보여준다.
-            "outcome": {"code": c.status, "ko": meta.get("ko", c.status),
-                        "tone": meta.get("tone", "muted")},
+            "outcome": _outcome_payload(c),
             "verdict_digest": _verdict_digest(_latest_plan(session, c)),
             "processed_at": c.updated_at.strftime("%Y-%m-%d %H:%M") if c.updated_at else "",
             "officer": "홍길동",
@@ -384,19 +401,114 @@ def staff_customer_history(session: Session, customer: str | None = None) -> dic
     }
 
 
-def staff_profile(session: Session) -> dict[str, Any]:
-    """직원 마이페이지 — 계정/알림 설정은 정적(로그인 기능 없음), 활동로그는 실제 처리 이력."""
+# ---- 계정 · 알림 설정 -------------------------------------------------------
+# '현재 사용자'는 로그인한 사람(auth/deps.current_identity 가 라우트에서 해결해 넘긴다)이고,
+# 토큰이 없으면 시드 계정으로 폴백한다 — 인증을 신원 판별용으로만 쓰고 라우트를 막지 않기
+# 때문에, 비로그인 데모 요청도 계속 동작해야 한다.
+
+
+def current_staff(session: Session, staff_id: str | None = None) -> Staff | None:
+    if staff_id:
+        found = session.execute(select(Staff).where(Staff.staff_id == staff_id)).scalars().first()
+        if found is not None:
+            return found
+    return session.execute(select(Staff).order_by(Staff.staff_id)).scalars().first()
+
+
+def _actor_id(session: Session, actor: str, staff_id: str | None = None) -> str | None:
+    """StageEvent 에 함께 넣을 사람 id — actor 종류에 따라 참조 대상이 갈린다(다형성).
+
+    actor="system" 은 행위자가 사람이 아니므로 None 이다(빈 값이 아니라 '해당 없음').
+    staff_id 는 로그인한 담당자 — 넘어오면 그 사람으로 귀속되고, 없으면 시드 계정이 된다.
+    """
+    if actor == "staff":
+        me = current_staff(session, staff_id)
+        return me.staff_id if me is not None else None
+    if actor == "citizen":
+        who = current_customer(session)
+        return who.customer_id if who is not None else None
+    return None
+
+
+def current_customer(session: Session, customer_id: str | None = None) -> Customer | None:
+    if customer_id:
+        found = session.execute(
+            select(Customer).where(Customer.customer_id == customer_id)).scalars().first()
+        if found is not None:
+            return found
+    return session.execute(select(Customer).order_by(Customer.customer_id)).scalars().first()
+
+
+def notification_settings(session: Session, owner_type: str, owner_id: str) -> list[dict[str, Any]]:
+    """알림 목록 — 라벨·설명은 demo_store(표현 어휘), 켜짐 여부는 DB(상태).
+
+    그동안 리터럴만 있어서 화면에서 토글해도 저장되지 않았다. 상태만 DB 로 옮기고
+    표현은 그대로 둔다 — 라벨을 DB 에 복제하면 문구를 고칠 때 두 곳을 고쳐야 한다.
+    """
+    defaults = (demo_store.staff_profile() if owner_type == "staff"
+                else demo_store.complainant_profile())["notifications"]
+    saved = {k: bool(e) for k, e in session.execute(
+        select(NotificationSetting.notif_key, NotificationSetting.enabled)
+        .where(NotificationSetting.owner_type == owner_type, NotificationSetting.owner_id == owner_id)
+    ).all()}
+    return [{**n, "enabled": saved.get(n["key"], n["enabled"])} for n in defaults]
+
+
+def set_notification_setting(session: Session, owner_type: str, owner_id: str,
+                             notif_key: str, enabled: bool) -> list[dict[str, Any]]:
+    """알림 하나를 켜거나 끈다. 없으면 만들고 있으면 갱신(upsert)."""
+    row = session.execute(
+        select(NotificationSetting).where(
+            NotificationSetting.owner_type == owner_type,
+            NotificationSetting.owner_id == owner_id,
+            NotificationSetting.notif_key == notif_key)
+    ).scalars().first()
+    if row is None:
+        session.add(NotificationSetting(owner_type=owner_type, owner_id=owner_id,
+                                        notif_key=notif_key, enabled=enabled))
+    else:
+        row.enabled = enabled
+    session.commit()
+    return notification_settings(session, owner_type, owner_id)
+
+
+def staff_profile(session: Session, staff_id: str | None = None) -> dict[str, Any]:
+    """직원 마이페이지 — 계정은 staff 테이블, 알림은 DB, 활동로그는 실제 처리 이력."""
+    me = current_staff(session, staff_id)
+    # 활동 로그는 '내가' 한 처리만 보여야 한다. 예전엔 actor=='staff' 로만 걸러서, 직원이
+    # 2명 이상이면 서로의 활동을 자기 것으로 표시하게 되어 있었다. 이제 actor_id 로 사람을
+    # 지목한다(계정 도입 전 기록은 db.link_demo_identities 가 홍길동으로 귀속시켜 둔다 —
+    # 그 시절 직원은 실제로 한 명이었다). 계정이 없으면 옛 방식으로 되돌아간다.
+    cond = (StageEvent.actor_id == me.staff_id) if me is not None else (StageEvent.actor == "staff")
     events = session.execute(
         select(StageEvent, Case.case_id).join(Case, Case.id == StageEvent.case_fk)
-        .where(StageEvent.actor == "staff").order_by(StageEvent.id.desc()).limit(8)
+        .where(cond).order_by(StageEvent.id.desc()).limit(8)
     ).all()
+
     profile = dict(demo_store.staff_profile())
+    if me is not None:
+        profile["account"] = {**profile["account"], "name": me.name, "team": me.dept,
+                              "rank": me.rank, "email": me.email, "phone": me.phone}
+        profile["notifications"] = notification_settings(session, "staff", me.staff_id)
+        # 로그인이 없으니 IP 는 여전히 지어내지 않는다. 최종 로그인은 계정 컬럼에서 온다.
+        profile["session"] = {"current_ip": "",
+                              "last_login": me.last_login_at.strftime("%Y-%m-%d %H:%M") if me.last_login_at else ""}
     profile["activity_log"] = [{
         "at": ev.at.strftime("%Y-%m-%d %H:%M") if ev.at else "",
         "action": ev.note or f"{ev.from_status} → {ev.to_status}",
         "detail": cid,
         "ip": "",
     } for ev, cid in events]
+    return profile
+
+
+def complainant_profile(session: Session, customer_id: str | None = None) -> dict[str, Any]:
+    """민원인 마이페이지 — 계정은 customers 테이블, 알림은 DB. 메뉴는 정적."""
+    profile = dict(demo_store.complainant_profile())
+    me = current_customer(session, customer_id)
+    if me is not None:
+        profile.update({"name": me.name, "email": me.email, "verified": me.verified})
+        profile["notifications"] = notification_settings(session, "customer", me.customer_id)
     return profile
 
 
@@ -565,7 +677,7 @@ def staff_checklist_plan(session: Session, case_id: str) -> dict[str, Any] | Non
     return _plan_payload(case, _latest_plan(session, case))
 
 
-def start_generation(session: Session, case_id: str) -> str | None:
+def start_generation(session: Session, case_id: str, staff_id: str | None = None) -> str | None:
     """검토계획 생성을 시작 상태로 만든다(수동 트리거 — 이관/시드 사건용).
 
     이미 생성 중이거나 승인된 뒤가 아니면 status→plan_generating 로 전이한다.
@@ -582,12 +694,13 @@ def start_generation(session: Session, case_id: str) -> str | None:
     prev = case.status
     case.status = "plan_generating"
     session.add(StageEvent(case_fk=case.id, from_status=prev, to_status="plan_generating",
-                           actor="staff", note="AI 검토계획 생성 요청"))
+                           actor="staff", actor_id=_actor_id(session, "staff", staff_id), note="AI 검토계획 생성 요청"))
     session.commit()
     return case.case_id
 
 
-def approve_plan(session: Session, case_id: str, approved_by: str = "홍길동") -> dict[str, Any]:
+def approve_plan(session: Session, case_id: str, approved_by: str = "홍길동",
+                 staff_id: str | None = None) -> dict[str, Any]:
     """직원이 검토계획을 승인 → 항목 체크·계획 승인·사건 status(plan_ready→reviewing) 전이.
 
     검토계획이 아직 준비(ready)되지 않았으면 ValueError(라우트가 409 로 변환).
@@ -607,12 +720,62 @@ def approve_plan(session: Session, case_id: str, approved_by: str = "홍길동")
         prev = case.status
         case.status = "reviewing"
         session.add(StageEvent(case_fk=case.id, from_status=prev, to_status="reviewing",
-                               actor="staff", note="검토계획 승인 → 검토 착수"))
+                               actor="staff", actor_id=_actor_id(session, "staff", staff_id), note="검토계획 승인 → 검토 착수"))
     session.commit()
     payload = _plan_payload(case, plan)
     payload["case_status"] = case.status
     payload["case_status_ko"] = _status_ko(case.status)
     return payload
+
+
+# ---- 직원: 사건 종결 --------------------------------------------------------
+# 그동안 'closed' 는 상태 라벨(demo_store.CASE_STATUS)·필터·집계·closed_at 파생에만
+# 등장하고 실제로 그 상태로 보내는 코드가 없었다 — 사건이 종결에 도달할 수 없었다.
+
+
+def _remaining_verdicts(plan: ReviewPlan | None) -> int:
+    """판정이 아직 안 난 항목 수 — 계획을 이미 들고 있는 호출부(_case_row)용."""
+    return sum(1 for it in plan.items if not it.verdict) if plan else 0
+
+
+def remaining_count(session: Session, case: Case) -> int:
+    """판정이 아직 안 난 검토 항목 수.
+
+    status 가 아니라 verdict 로 센다 — approve_plan 이 계획 승인 시 모든 항목을 일괄
+    'approved' 로 바꾸므로(항목별 판정 여부와 무관) status 로는 셀 수 없다. verdict 는
+    기본값이 빈 문자열이고 case_ai 의 판정 생성에서 채워진다.
+    """
+    return _remaining_verdicts(_latest_plan(session, case))
+
+
+def close_case(session: Session, case_id: str, outcome: str, note: str = "",
+               staff_id: str | None = None) -> dict[str, Any]:
+    """사건 종결 — status='closed' + 사람이 내린 결정(outcome) 기록 + 단계 이벤트.
+
+    종결 시각은 컬럼으로 두지 않는다. 여기서 남기는 StageEvent(to_status="closed") 가
+    유일한 출처이고 complainant_history 가 거기서 closed_at 을 파생한다.
+    """
+    case = _get_case(session, case_id)
+    if case is None:
+        raise LookupError("사건을 찾을 수 없습니다.")
+    if outcome not in demo_store.DECISION_OUTCOMES:
+        raise ValueError(f"알 수 없는 종결 결과입니다: {outcome}")
+    if case.status == "closed":
+        raise ValueError("이미 종결된 사건입니다.")
+    if case.status not in _CLOSEABLE_STATUSES:
+        raise ValueError(f"'{_status_ko(case.status)}' 단계에서는 종결할 수 없습니다. 판정이 나온 뒤에 종결하세요.")
+    left = remaining_count(session, case)
+    if left:
+        raise ValueError(f"아직 판정이 나지 않은 검토 항목이 {left}건 있습니다. 판정을 마친 뒤 종결할 수 있습니다.")
+    prev = case.status
+    case.status = "closed"
+    case.outcome = outcome
+    session.add(StageEvent(
+        case_fk=case.id, from_status=prev, to_status="closed", actor="staff", actor_id=_actor_id(session, "staff", staff_id),
+        note=note or f"종결 처리({demo_store.DECISION_OUTCOMES[outcome]['ko']})",
+    ))
+    session.commit()
+    return staff_case_detail(session, case_id)
 
 
 # ---- 직원: 처리현황(사건 목록 + 사건 원장/판정 + 유사사례) ------------------
@@ -644,6 +807,11 @@ def _case_row(session: Session, c: Case) -> dict[str, Any]:
         "verdict_digest": _verdict_digest(plan),
         "item_count": len(plan.items) if plan else 0,
         "has_verdict": c.status in ("verdict", "negotiating", "closed"),
+        # 종결 결과(있으면) + 종결 가능 여부 — close_case 의 게이트와 같은 규칙을 화면이
+        # 미리 보여줄 수 있도록 함께 싣는다(눌러서 409 를 받게 하지 않는다).
+        "outcome": _outcome_payload(c),
+        "remaining_verdicts": _remaining_verdicts(plan),
+        "can_close": c.status in _CLOSEABLE_STATUSES and _remaining_verdicts(plan) == 0,
         "next_action": _NEXT_ACTION.get(c.status, "-"),
         "mediation_status": med.status if med is not None else "none",
         "mediation_status_ko": (_MEDIATION_STATUS_KO.get(med.status, med.status)
@@ -783,7 +951,7 @@ def _find_item(session: Session, case_id: str, seq: int) -> ChecklistItemRow:
 
 def override_verdict(session: Session, case_id: str, seq: int, *, verdict: str, ko: str,
                      detail: str, reason: str, code: str | None = None,
-                     staff: str = "홍길동") -> dict[str, Any]:
+                     staff: str = "홍길동", staff_id: str | None = None) -> dict[str, Any]:
     """직원이 AI 판정을 직접 고쳐 확정한다. AI 원안은 ai_original 에 보존한다.
 
     AI 판정은 제안이고 확정은 사람이 한다는 것이 이 시스템의 전제인데, 그동안 화면에서
@@ -812,7 +980,7 @@ def override_verdict(session: Session, case_id: str, seq: int, *, verdict: str, 
     case = _get_case(session, case_id)
     if case is not None:
         session.add(StageEvent(
-            case_fk=case.id, from_status=case.status, to_status=case.status, actor="staff",
+            case_fk=case.id, from_status=case.status, to_status=case.status, actor="staff", actor_id=_actor_id(session, "staff", staff_id),
             note=f"검토 항목 #{seq} 판정 담당자 수정: "
                  f"{(item.ai_original or {}).get('verdict', '—')} → {verdict} · 사유: {reason.strip()}",
         ))
@@ -820,7 +988,8 @@ def override_verdict(session: Session, case_id: str, seq: int, *, verdict: str, 
     return staff_case_detail(session, case_id) or {}
 
 
-def revert_verdict(session: Session, case_id: str, seq: int, staff: str = "홍길동") -> dict[str, Any]:
+def revert_verdict(session: Session, case_id: str, seq: int, staff: str = "홍길동",
+                   staff_id: str | None = None) -> dict[str, Any]:
     """담당자 수정을 되돌려 AI 원안으로 복구한다."""
     item = _find_item(session, case_id, seq)
     ai = item.ai_original or {}
@@ -839,7 +1008,7 @@ def revert_verdict(session: Session, case_id: str, seq: int, staff: str = "홍�
     case = _get_case(session, case_id)
     if case is not None:
         session.add(StageEvent(
-            case_fk=case.id, from_status=case.status, to_status=case.status, actor="staff",
+            case_fk=case.id, from_status=case.status, to_status=case.status, actor="staff", actor_id=_actor_id(session, "staff", staff_id),
             note=f"검토 항목 #{seq} 판정을 AI 원안으로 되돌림({staff})",
         ))
     session.commit()
@@ -884,6 +1053,11 @@ def staff_case_detail(session: Session, case_id: str) -> dict[str, Any] | None:
         "due_date": due,
         "days_left": days_left,
         "over_deadline_risk": bool(due) and days_left <= 7,
+        # 종결 결과(사람이 내린 결정) + 종결 가능 여부. close_case 의 게이트와 같은 규칙이다.
+        "outcome": _outcome_payload(case),
+        "outcome_options": [{"code": k, **v} for k, v in demo_store.DECISION_OUTCOMES.items()],
+        "remaining_verdicts": _remaining_verdicts(plan),
+        "can_close": case.status in _CLOSEABLE_STATUSES and _remaining_verdicts(plan) == 0,
         # 원장(판정 결과) — verdict_status 로 UI 가 생성 버튼/스피너/원장을 분기한다.
         "verdict_status": _verdict_status(case, plan),
         "classification": plan.classification if plan else (case.complaint_type or ""),
@@ -916,7 +1090,8 @@ def staff_case_detail(session: Session, case_id: str) -> dict[str, Any] | None:
     }
 
 
-def start_verdict_generation(session: Session, case_id: str) -> str | None:
+def start_verdict_generation(session: Session, case_id: str,
+                             staff_id: str | None = None) -> str | None:
     """직원이 '판정 생성'을 누르면 호출 — 사건을 verdict_generating 으로 잡고 case_id 반환.
 
     승인된 검토계획이 있고(reviewing/verdict 상태) 아직 생성 중이 아닐 때만 예약한다.
@@ -934,7 +1109,7 @@ def start_verdict_generation(session: Session, case_id: str) -> str | None:
     prev = case.status
     case.status = "verdict_generating"
     session.add(StageEvent(case_fk=case.id, from_status=prev, to_status="verdict_generating",
-                           actor="staff", note="AI 규정 판정 생성 요청"))
+                           actor="staff", actor_id=_actor_id(session, "staff", staff_id), note="AI 규정 판정 생성 요청"))
     session.commit()
     return case.case_id
 
@@ -1007,7 +1182,7 @@ def mediation_payload(session: Session, case: Case) -> dict[str, Any] | None:
 
 
 def request_mediation(session: Session, case_id: str, *, requested_by: str,
-                      reason: str) -> dict[str, Any]:
+                      reason: str, staff_id: str | None = None) -> dict[str, Any]:
     """민원인 또는 직원이 그 사건에 협상·중재를 요청한다(멱등 — 이미 있으면 사유만 덧붙인다).
 
     요청 사실은 ① 사건 상태(negotiating) ② 단계 이력(StageEvent) ③ 양쪽 화면에 보이는
@@ -1017,6 +1192,8 @@ def request_mediation(session: Session, case_id: str, *, requested_by: str,
     if case is None:
         raise LookupError("사건을 찾을 수 없습니다.")
     who = _REQUESTER_KO.get(requested_by, requested_by)
+    # 요청자에 따라 행위자 종류가 갈린다 — actor 와 actor_id 가 한 쌍으로 움직여야 한다.
+    _kind = "citizen" if requested_by == "complainant" else "staff"
     med = _get_mediation(session, case)
     if med is None:
         med = CaseMediation(case_fk=case.id, status="requested",
@@ -1029,11 +1206,11 @@ def request_mediation(session: Session, case_id: str, *, requested_by: str,
         prev = case.status
         case.status = "negotiating"
         session.add(StageEvent(case_fk=case.id, from_status=prev, to_status="negotiating",
-                               actor="citizen" if requested_by == "complainant" else "staff",
+                               actor=_kind, actor_id=_actor_id(session, _kind, staff_id),
                                note=f"{who}의 협상·중재 요청"))
     else:
         session.add(StageEvent(case_fk=case.id, from_status=case.status, to_status=case.status,
-                               actor="citizen" if requested_by == "complainant" else "staff",
+                               actor=_kind, actor_id=_actor_id(session, _kind, staff_id),
                                note=f"{who}의 협상·중재 요청(추가)"))
 
     # 민원인 진행현황 '협의' 단계에 보이는 안내 + 직원 화면용 기록.
@@ -1058,7 +1235,7 @@ def request_mediation(session: Session, case_id: str, *, requested_by: str,
 
 def save_mediation_session(session: Session, case_id: str, *, sid: str, scenario_id: str,
                            record: dict[str, Any], turn_index: int, max_turns: int,
-                           done: bool) -> dict[str, Any]:
+                           done: bool, staff_id: str | None = None) -> dict[str, Any]:
     """라이브 세션의 현재 레코드를 사건에 스냅샷한다(개시·턴 진행 후 공통 호출).
 
     세션 자체는 mediation_live 가 메모리로 들고 있지만, 스냅샷이 DB 에 있으므로 서버가
@@ -1082,7 +1259,7 @@ def save_mediation_session(session: Session, case_id: str, *, sid: str, scenario
         prev = case.status
         case.status = "negotiating"
         session.add(StageEvent(case_fk=case.id, from_status=prev, to_status="negotiating",
-                               actor="staff", note="협상·중재 개시"))
+                               actor="staff", actor_id=_actor_id(session, "staff", staff_id), note="협상·중재 개시"))
     session.commit()
     return mediation_payload(session, case) or {}
 
@@ -1344,7 +1521,7 @@ def submit_complaint(session: Session, product_type: str, facts: str,
     session.add(case)
     session.flush()  # id 확보
     case.case_id = f"C-{today.year}-{today.month:02d}-{100 + case.id:03d}"
-    session.add(StageEvent(case_fk=case.id, from_status=None, to_status="intake", actor="citizen", note="민원인 앱 제출"))
+    session.add(StageEvent(case_fk=case.id, from_status=None, to_status="intake", actor="citizen", actor_id=_actor_id(session, "citizen"), note="민원인 앱 제출"))
     # 진행현황 트래커가 접수 직후에도 비지 않도록 접수 안내 메시지 1건을 심는다.
     session.add(CaseMessage(
         case_fk=case.id, stage_key="intake", audience="complainant", sender="시스템",

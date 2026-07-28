@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api.js'
+import { api, auth } from '../api.js'
 import { useAsync, Loading, Toggle } from '../components.jsx'
 
 export default function MyPage() {
@@ -41,8 +41,12 @@ export default function MyPage() {
                   <Toggle
                     on={n.enabled}
                     onChange={(v) => {
+                      // 먼저 화면을 바꿔 반응을 즉시 보여주고(낙관적), 서버 저장 결과로 확정한다.
                       const next = notifications.map((x, j) => (j === i ? { ...x, enabled: v } : x))
                       setNoti(next)
+                      api.staffSetNotification(n.key, v)
+                        .then((r) => r?.notifications && setNoti(r.notifications))
+                        .catch(() => setNoti(notifications))  // 저장 실패 시 원래대로
                     }}
                   />
                 </div>
@@ -56,7 +60,13 @@ export default function MyPage() {
           <div className="card">
             <div className="panel-head"><h2>계정 관리</h2></div>
             <div className="panel-pad">
-              <button className="btn danger block" onClick={() => nav('/')}>로그아웃</button>
+              {/* 예전엔 첫 화면으로 이동만 하고 토큰은 그대로 남았다 — 실제로 로그아웃한다. */}
+              <button
+                className="btn danger block"
+                onClick={async () => { await api.logout(); nav('/login') }}
+              >
+                {auth.user() ? `로그아웃 (${auth.user().name})` : '로그아웃'}
+              </button>
             </div>
           </div>
 

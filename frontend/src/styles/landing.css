@@ -93,3 +93,34 @@
   color: #7d90ac;
   font-size: 12.5px;
 }
+
+/* 로그인 폼 — 랜딩과 같은 어두운 배경 위에 올라간다(theme.css 의 .btn/.alert 를 그대로 쓴다). */
+.login-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+.login-form label {
+  display: grid;
+  gap: 6px;
+}
+.login-form label span {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #9fb2cc;
+}
+.login-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #2b3a52;
+  background: #131c2b;
+  color: #e8eef8;
+  font-size: 14px;
+  font-family: inherit;
+}
+.login-form input:focus {
+  outline: none;
+  border-color: #4d7fd6;
+}

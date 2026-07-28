@@ -33,8 +33,13 @@ export default function Landing() {
           </button>
         </div>
 
+        <button className="btn block" style={{ maxWidth: 320, margin: '18px auto 0' }} onClick={() => nav('/login')}>
+          🔑 로그인
+        </button>
+
         <p className="landing-foot">
           접수하신 민원의 처리 단계와 결과는 민원인 포털 진행현황에서 언제든 확인하실 수 있습니다.
+          로그인하지 않아도 둘러볼 수 있고, 로그인하면 담당자·활동 기록이 본인 기준으로 표시됩니다.
         </p>
       </div>
     </div>

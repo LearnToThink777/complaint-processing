@@ -430,6 +430,13 @@ function CaseDetail({ caseId, onStatusChange }) {
 
           {/* 협상·중재 — 상태 요약만. 진행은 협상·중재 화면에서 한다. */}
           <MediationSummary caseId={caseId} mediation={data.mediation} />
+
+          {/* 종결 처리 — 사건을 닫고 사람이 내린 결정을 남기는 마지막 단계. */}
+          <CaseClosure
+            caseId={caseId}
+            detail={data}
+            onClosed={async () => { await fetchDetail(); onStatusChange?.() }}
+          />
         </div>
       </div>
     </div>
@@ -683,6 +690,82 @@ function MediationSummary({ caseId, mediation }) {
         <button className="btn primary block" onClick={goConsole}>
           {m ? '협상·중재 화면에서 이어보기' : '협상·중재 열기'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// 종결 처리 — 그동안 '종결'은 상태 라벨·필터·집계에만 있고 사건을 그 상태로 보내는 통로가
+// 어디에도 없었다(사건이 종결에 도달할 수 없었다). 여기가 그 통로다.
+// AI 판정과 달리 이건 사람의 결정이므로, 무엇을 근거로 닫는지(남은 판정)를 먼저 보여준다.
+function CaseClosure({ caseId, detail, onClosed }) {
+  const [outcome, setOutcome] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  const closed = detail.status === 'closed'
+  const left = detail.remaining_verdicts || 0
+  const options = detail.outcome_options || []
+
+  const submit = async () => {
+    setBusy(true); setErr(null)
+    try {
+      await api.staffCloseCase(caseId, outcome, note.trim())
+      await onClosed?.()
+    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <div className="panel-head">
+        <h2>종결 처리</h2>
+        {closed
+          ? <Badge tone={detail.outcome?.tone || 'good'}>{detail.outcome?.ko || '종결'}</Badge>
+          : <Badge tone="muted">진행 중</Badge>}
+      </div>
+      <div className="panel-pad">
+        {closed ? (
+          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+            이 사건은 <b>{detail.outcome?.ko}</b>(으)로 종결되었습니다. 처리 기록에서 종결 시점을 확인할 수 있습니다.
+          </p>
+        ) : !detail.can_close ? (
+          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+            {left > 0
+              ? `아직 판정이 나지 않은 검토 항목이 ${left}건 있습니다. 판정을 마친 뒤 종결할 수 있습니다.`
+              : '판정이 나온 뒤에 종결할 수 있습니다.'}
+          </p>
+        ) : (
+          <>
+            <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+              검토 항목 {detail.ledger?.length || 0}건의 판정이 모두 끝났습니다. 최종 결정을 선택해 종결하세요.
+            </p>
+            <div className="row gap8" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+              {options.map((o) => (
+                <button
+                  key={o.code}
+                  className={`btn${outcome === o.code ? ' primary' : ''}`}
+                  onClick={() => setOutcome(o.code)}
+                  disabled={busy}
+                >
+                  {o.ko}
+                </button>
+              ))}
+            </div>
+            <input
+              className="chip-select"
+              placeholder="처리 기록에 남길 메모(선택)"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={busy}
+              style={{ width: '100%', marginBottom: 10, boxSizing: 'border-box' }}
+            />
+            <button className="btn primary block" onClick={submit} disabled={busy || !outcome}>
+              {busy ? '종결 처리 중…' : '종결 처리'}
+            </button>
+          </>
+        )}
+        {err && <div className="alert bad" style={{ marginTop: 10 }}>⚠ {err}</div>}
       </div>
     </div>
   )

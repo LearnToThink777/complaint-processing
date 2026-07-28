@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -53,6 +53,18 @@ class Case(Base):
     expected_completion: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+    # 사람이 내린 최종 결정(demo_store.DECISION_OUTCOMES 키: accepted|partial|rejected).
+    # 종결 전에는 None — 그동안 라벨만 있고 저장할 곳이 없어 status 로 대신 보여주고 있었다.
+    # 종결 시각은 별도 컬럼을 두지 않는다: StageEvent(to_status="closed") 가 이미 남고
+    # demo_db.complainant_history 가 거기서 closed_at 을 파생한다(출처를 하나로 둔다).
+    outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 사건의 소유자·담당자. customers/staff 를 가리키지만 ForeignKey 를 걸지 않는다:
+    # SQLite ALTER TABLE 은 REFERENCES 컬럼을 기존 테이블에 추가할 수 없어서(실측 확인)
+    # FK 로 선언하면 새로 만든 DB 에만 REFERENCES 가 박히고 기존 DB 에는 안 박혀 DDL 이 갈린다.
+    # performance_logs.case_id 가 같은 선례다. 관계는 코드 계약으로 지킨다.
+    # 기존 사건은 NULL(소유자 미상) — 이름 문자열(customer)로는 동명이인을 가릴 수 없어 백필하지 않는다.
+    customer_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    assigned_staff_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     plans: Mapped[list["ReviewPlan"]] = relationship(
         back_populates="case", order_by="ReviewPlan.id", cascade="all, delete-orphan"
@@ -173,6 +185,12 @@ class StageEvent(Base):
     from_status: Mapped[str | None] = mapped_column(String, nullable=True)
     to_status: Mapped[str] = mapped_column(String, default="")
     actor: Mapped[str] = mapped_column(String, default="system")  # system | staff | citizen
+    # actor 가 '어느 종류'인지만 알려주고 '누구인지'는 몰랐다 — 직원이 2명 이상이 되면
+    # actor=='staff' 필터가 모두의 활동을 서로의 것으로 섞는다. actor_id 가 그 사람을 지목한다.
+    # actor 가 타입 판별자라 (actor, actor_id) 가 한 쌍이다. actor 값에 따라 참조 대상이
+    # staff/customers/없음(system)으로 갈리므로 SQL FK 를 걸 수 없다(다형성 참조).
+    # 기존 행은 NULL — 누가 했는지 기록한 곳이 어디에도 없어 백필이 불가능하다.
+    actor_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     note: Mapped[str] = mapped_column(Text, default="")
 
@@ -235,3 +253,97 @@ class CaseMessage(Base):
     at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     case: Mapped["Case"] = relationship(back_populates="messages")
+
+
+# ---------------------------------------------------------------------------
+# 계정 계층 — 그동안 사람은 테이블이 아니라 문자열이었다.
+# 고객은 cases.customer 이름 문자열, 직원은 "홍길동" 상수였다(동명이인 구분 불가,
+# 담당자 배정 개념 없음). 아래 두 테이블이 사람을 실체로 만든다.
+# 비밀번호 해싱·세션은 아직 없다 — password_hash 는 컬럼만 두고 로그인 도입 시 채운다.
+# ---------------------------------------------------------------------------
+
+
+class Customer(Base):
+    """민원인 계정. email 이 로그인 ID."""
+
+    __tablename__ = "customers"
+
+    customer_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, default="")
+    phone: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String, default="")
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)  # 본인인증 여부
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # 인증 계층(auth/)이 민원인·직원을 같은 방식으로 다루기 위한 공통 인터페이스.
+    # 두 테이블의 PK 이름이 다르므로(customer_id/staff_id) 여기서 통일해 준다.
+    @property
+    def id(self) -> str:
+        return self.customer_id
+
+    @property
+    def user_type(self) -> str:
+        return "customer"
+
+
+class Staff(Base):
+    """직원 계정. email 이 로그인 ID. dept/rank 는 마이페이지 계정 정보에 쓰인다."""
+
+    __tablename__ = "staff"
+
+    staff_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, default="")
+    dept: Mapped[str] = mapped_column(String, default="")
+    rank: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String, default="")
+    phone: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def id(self) -> str:
+        return self.staff_id
+
+    @property
+    def user_type(self) -> str:
+        return "staff"
+
+
+class NotificationSetting(Base):
+    """알림 켜기/끄기. 그동안 demo_store 의 파이썬 리터럴이라 토글해도 저장되지 않았다.
+
+    owner_type 으로 민원인/직원을 가르고 owner_id 가 그 사람을 지목한다(다형성이라 FK 없음).
+    notif_key 는 화면의 알림 항목 키(due_soon/ai_done/progress/… — demo_store 의 기본 목록과 같은 어휘).
+    """
+
+    __tablename__ = "notification_settings"
+    __table_args__ = (UniqueConstraint("owner_type", "owner_id", "notif_key", name="uq_notif_owner_key"),)
+
+    setting_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_type: Mapped[str] = mapped_column(String, index=True)  # customer | staff
+    owner_id: Mapped[str] = mapped_column(String, index=True)
+    notif_key: Mapped[str] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ActivityLog(Base):
+    """계정 행위 로그 — 로그인·세션처럼 '사건에 속하지 않는' 행위 전용.
+
+    사건에서 일어난 일은 여기 쓰지 않는다(stage_events 가 그 원천이다). 축이 다르기 때문이다:
+    stage_events 는 사건이 축이고 여기는 사람이 축이다. 사건 활동을 여기 중복 기록하면
+    두 곳이 어긋나고, 반대로 조회·다운로드를 stage_events 에 넣으면 그 기록이 사건 타임라인에
+    섞여 민원인 화면까지 새어 나간다(demo_db.case_events 가 사건의 전이를 그대로 보여준다).
+    """
+
+    __tablename__ = "activity_log"
+
+    log_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_type: Mapped[str] = mapped_column(String, index=True)  # customer | staff
+    owner_id: Mapped[str] = mapped_column(String, index=True)
+    action: Mapped[str] = mapped_column(String, default="")  # 로그인 | 로그아웃 | …
+    detail: Mapped[str] = mapped_column(String, default="")
+    ip: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
